@@ -262,6 +262,25 @@ function mountains(scene) {
   return m;
 }
 
+/** 屋上の小物：室外機・給水タンク・手すり・物干し */
+function rooftop(g, x, z, w, d, y = 5.7) {
+  const r = R();
+  for (let i = 0; i < 1 + Math.floor(r * 3); i++) acUnit(g, x - w / 2 + 0.8 + R() * (w - 1.6), y, z - d / 2 + 0.6 + R() * (d - 1.2), R() * 6);
+  if (r < 0.45) {
+    cyl(g, 0.5, 0.5, 1.1, x + (R() - 0.5) * 2, y, z + (R() - 0.5) * 2, 0x9fb6c9, 12);
+    cyl(g, 0.52, 0.52, 0.08, x + 0.0, y + 1.1, z, 0x8a9aa8, 12, { cast: false });
+  }
+  if (r > 0.6) {
+    for (const s of [-1, 1]) box(g, w - 0.4, 0.05, 0.05, x, y + 0.9, z + s * (d / 2 - 0.2), 0xcfc8bb, { cast: false });
+    for (let i = 0; i < 5; i++) box(g, 0.05, 0.9, 0.05, x - w / 2 + 0.2 + i * (w - 0.4) / 4, y, z + d / 2 - 0.2, 0xcfc8bb, { cast: false });
+  }
+  if (r > 0.3 && r < 0.6) {
+    const cols = [0xffffff, 0x9fcfe8, 0xf7c9c0, 0xfff1b8];
+    for (let i = 0; i < 4; i++) box(g, 0.4, 0.55, 0.03, x - 1 + i * 0.6, y + 0.8, z + 1.2, cols[i % 4], { cast: true });
+    box(g, 2.6, 0.03, 0.03, x - 0.1, y + 1.4, z + 1.2, 0xdddddd, { cast: false });
+  }
+}
+
 // ------------------------------------------------------------
 // 町を建てる
 // ------------------------------------------------------------
@@ -645,6 +664,7 @@ export function buildTown(scene, renderer, day) {
     s.position.set(39 - 3.5, 0, zc);
     st.add(s);
     col.addBox(32, 39, zc - shopW / 2, zc + shopW / 2, 0, 5.7, 'shop');
+    rooftop(st, 35.5, zc, 6, 6);
     anchors.shops[goods === 'fish' ? 'fish' : goods === 'flower' ? 'flower' : goods === 'veg' ? 'veg' : name] = new THREE.Vector3(39.9, 0, zc);
     pools.add(40.5, zc - 1.8, 2.2);
     pools.add(40.5, zc + 1.8, 2.2);
@@ -657,6 +677,7 @@ export function buildTown(scene, renderer, day) {
     s.position.set(47 + 3.5, 0, zc);
     st.add(s);
     col.addBox(47, 54, zc - shopW / 2, zc + shopW / 2, 0, 5.7, 'shop');
+    rooftop(st, 50.5, zc, 6, 6);
     if (goods === 'meat') anchors.shops.meat = new THREE.Vector3(46.1, 0, zc);
     pools.add(45.5, zc - 1.8, 2.2);
     pools.add(45.5, zc + 1.8, 2.2);
@@ -1354,8 +1375,8 @@ export function buildTown(scene, renderer, day) {
     farBlock(103 + fr() * 3, z, 14, 13, 9 + fr() * 12);
   }
   // 駅の向こう
-  for (let z = -250; z < 110; z += 18) farBlock(162 + fr() * 6, z, 16, 15, 16 + fr() * 26);
-  for (let z = -250; z < 110; z += 22) farBlock(188 + fr() * 10, z, 18, 18, 24 + fr() * 30);
+  for (let z = -250; z < 110; z += 18) farBlock(162 + fr() * 6, z, 16, 15, 10 + fr() * 14);
+  for (let z = -250; z < 110; z += 22) farBlock(188 + fr() * 10, z, 18, 18, 14 + fr() * 18);
   // 南・西・北の住宅街の向こう
   for (let x = -60; x < 70; x += 16) farBlock(x, 40 + fr() * 6, 14, 12, 8 + fr() * 10);
   for (let x = -60; x < 70; x += 18) farBlock(x, -130 - fr() * 6, 15, 12, 10 + fr() * 14);
@@ -1391,12 +1412,33 @@ export function buildTown(scene, renderer, day) {
     details.push({ list, box: box3, on: true });
   }
 
+  // 地区の結合メッシュ（影を落とすもの）を、遠いときは影なしに
+  const shadowSets = [];
+  for (const [name, g] of Object.entries(districts)) {
+    if (name === 'far' || name === 'base') continue;
+    const list = g.children.filter((o) => o.isMesh && o.castShadow);
+    shadowSets.push({ list, box: new THREE.Box3().setFromObject(g), on: true });
+  }
+
   const petals = new Petals(scene, petalsEmit, 260);
   const tmpC = new THREE.Color();
   return {
     col, districts, anchors, room, win, pools, petals, signals, clockFaces,
-    update(dt, t, hour, camPos) {
+    update(dt, t, hour, camPos, focus) {
       for (const d of dynamic) d.update(dt, t);
+      if (camPos) {
+        const inRoom = camPos.x > ROOM.minX && camPos.x < ROOM.maxX && camPos.z > ROOM.minZ && camPos.z < ROOM.maxZ && camPos.y < ROOM.h;
+        if (inRoom !== this._inRoom) {
+          this._inRoom = inRoom;
+          for (const k of ['street', 'park', 'road', 'plaza', 'station']) districts[k].visible = !inRoom;
+        }
+      }
+      if (focus) {
+        for (const s of shadowSets) {
+          const on = s.box.distanceToPoint(focus) < 30;
+          if (on !== s.on) { s.on = on; for (const m of s.list) m.castShadow = on; }
+        }
+      }
       if (camPos) {
         for (const d of details) {
           const on = d.box.distanceToPoint(camPos) < 75;

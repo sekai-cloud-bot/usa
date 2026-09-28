@@ -344,7 +344,7 @@ export class Game {
       const a = V(dogP.x - 1.8, dogP.y + 0.7, dogP.z + 0.3);
       const b = V(dogP.x - 7, 16, dogP.z + 13);
       c.position.lerpVectors(t < 0.01 ? from : a, b, k);
-      const look = _v.lerpVectors(V(dogP.x + 3, 0.6, dogP.z), station, smooth(clamp((t - 0.6) / 5, 0, 1)));
+      const look = _v.lerpVectors(V(dogP.x + 3, 0.6, dogP.z), V(station.x, 13, station.z), smooth(clamp((t - 0.6) / 5, 0, 1)));
       c.lookAt(look);
       const fov = lerp(50, 38, k);
       if (Math.abs(c.fov - fov) > 0.01) { c.fov = fov; c.updateProjectionMatrix(); }

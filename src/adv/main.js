@@ -130,7 +130,7 @@ function step(dt) {
   if (mode === 'title') focus.copy(FLY_LOOK.getPointAt(Math.min(1, flyT + 0.02)));
   else focus.copy(player.pos);
   day.update(dt, focus, camera.position);
-  town.update(dt, t, hour, camera.position);
+  town.update(dt, t, hour, camera.position, focus);
   ui.updateBubbles();
   const h = renderer.domElement.height;
   game.fx.setScale(h); game.dust.setScale(h); game.trail.fx.setScale(h);
