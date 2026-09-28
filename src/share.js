@@ -1,9 +1,7 @@
 import { yen } from './util.js';
-import { INCIDENT_MAP } from './incidents.js';
 
 const FONT = '"M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Kosugi Maru", "Yu Gothic", "Meiryo", "IPAGothic", sans-serif';
 const INK = '#5b4033';
-const CORAL = '#e8735f';
 
 function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -38,7 +36,6 @@ function wrapText(ctx, text, maxW) {
   let cur = '';
   for (const ch of text) {
     if (ctx.measureText(cur + ch).width > maxW && cur) {
-      // 句読点は行頭に来ないように
       if ('、。！？…）」'.includes(ch)) { cur += ch; lines.push(cur); cur = ''; continue; }
       lines.push(cur);
       cur = ch;
@@ -56,14 +53,22 @@ function drawCover(ctx, img, x, y, w, h) {
   ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
 }
 
-export async function makeShareCanvas(result, portraitURL) {
+function stars(ctx, n, x, y, size) {
+  ctx.font = `800 ${size}px ${FONT}`;
+  ctx.textAlign = 'left';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < n ? '#f6be3c' : '#eadfd2';
+    ctx.fillText('★', x + i * size * 1.02, y);
+  }
+}
+
+/** 「みまもり日記」画像 */
+export async function makeShareCanvas(result, photo, portraitURL, albumCount) {
   try { await document.fonts?.ready; } catch (e) { /* noop */ }
   const W = 1080, H = 1350;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
-
-  // 背景
   ctx.fillStyle = '#fbe3d8';
   ctx.fillRect(0, 0, W, H);
   rr(ctx, 22, 22, W - 44, H - 44, 48);
@@ -74,106 +79,56 @@ export async function makeShareCanvas(result, portraitURL) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = INK;
-  const title = `${result.name}のお留守番報告書`;
-  let fs = 68;
+  const title = `${result.name}のみまもり日記`;
+  let fs = 64;
   ctx.font = `800 ${fs}px ${FONT}`;
-  while (ctx.measureText(title).width > 820 && fs > 40) { fs -= 2; ctx.font = `800 ${fs}px ${FONT}`; }
-  ctx.fillText(title, W / 2, 104);
+  while (ctx.measureText(title).width > 800 && fs > 40) { fs -= 2; ctx.font = `800 ${fs}px ${FONT}`; }
+  ctx.fillText(title, W / 2, 100);
   const tw = ctx.measureText(title).width;
-  paw(ctx, W / 2 - tw / 2 - 58, 108, 34, '#f3a08e');
-  paw(ctx, W / 2 + tw / 2 + 58, 108, 34, '#f3a08e');
+  paw(ctx, W / 2 - tw / 2 - 56, 104, 32, '#f3a08e');
+  paw(ctx, W / 2 + tw / 2 + 56, 104, 32, '#f3a08e');
 
-  // 写真
-  const photo = await loadImg(result.photo);
-  const px = 60, py = 170, pw = W - 120, ph = 600;
+  // ポラロイド
+  const img = await loadImg(photo && photo.url);
   ctx.save();
-  rr(ctx, px, py, pw, ph, 36);
-  ctx.clip();
-  ctx.fillStyle = '#f1e1cf';
-  ctx.fillRect(px, py, pw, ph);
-  if (photo) drawCover(ctx, photo, px, py, pw, ph);
-  ctx.restore();
-
-  // 判定タグ
-  ctx.save();
-  ctx.translate(px + 40, py + 44);
-  ctx.rotate(-0.06);
-  ctx.font = `800 40px ${FONT}`;
-  const vw = ctx.measureText(result.verdictLabel).width + 50;
-  rr(ctx, -10, -34, vw, 68, 30);
-  ctx.fillStyle = result.verdict === 'caught' || result.verdict === 'scene' ? CORAL : '#5aae8f';
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.textAlign = 'left';
-  ctx.fillText(result.verdictLabel, 15, 2);
-  ctx.restore();
-
-  // 被害総額
-  const lx = 70, ly = 820;
-  ctx.textAlign = 'center';
-  ctx.font = `800 38px ${FONT}`;
-  const lab = '本日の被害総額';
-  const lw = ctx.measureText(lab).width + 70;
-  rr(ctx, lx + 290 - lw / 2, ly - 34, lw, 68, 34);
-  ctx.fillStyle = '#fbd3c5';
-  ctx.fill();
-  ctx.fillStyle = INK;
-  ctx.fillText(lab, lx + 290, ly + 2);
-  ctx.font = `800 118px ${FONT}`;
-  let ys = yen(result.total);
-  let yfs = 118;
-  while (ctx.measureText(ys).width > 600 && yfs > 60) { yfs -= 4; ctx.font = `800 ${yfs}px ${FONT}`; }
-  ctx.fillStyle = '#f7c6b5';
-  ctx.fillRect(lx + 290 - ctx.measureText(ys).width / 2, ly + 138, ctx.measureText(ys).width, 16);
-  ctx.fillStyle = INK;
-  ctx.fillText(ys, lx + 290, ly + 100);
-
-  // 明細
-  const entries = Object.entries(result.ledger).filter(([, e]) => !e.bonus).sort((a, b) => b[1].yen - a[1].yen);
-  const merged = {};
-  for (const [k, e] of entries) {
-    const lbl = { cushion: 'クッション', slipper: 'スリッパ', book: '本' }[k] || e.label;
-    const m = merged[lbl] || (merged[lbl] = { key: k, label: lbl, count: 0, yen: 0 });
-    m.count += e.count; m.yen += e.yen;
-  }
-  const list = Object.values(merged).sort((a, b) => b.yen - a.yen).slice(0, 4);
-  const bx = 60, by = 1000, bw = 600, bh = 250;
-  rr(ctx, bx, by, bw, bh, 28);
+  ctx.translate(W / 2, 580);
+  ctx.rotate(-0.025);
+  const pw = 880, ph = 660, pad = 22, bottom = 130;
+  ctx.shadowColor = 'rgba(90, 50, 20, 0.25)';
+  ctx.shadowBlur = 30;
+  ctx.shadowOffsetY = 10;
   ctx.fillStyle = '#ffffff';
+  ctx.fillRect(-pw / 2 - pad, -ph / 2 - pad, pw + pad * 2, ph + pad + bottom);
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = '#eee';
+  ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
+  if (img) drawCover(ctx, img, -pw / 2, -ph / 2, pw, ph);
+  // カメラの表示
+  ctx.textAlign = 'left';
+  ctx.font = `800 28px ${FONT}`;
+  rr(ctx, -pw / 2 + 18, -ph / 2 + 18, 230, 48, 20);
+  ctx.fillStyle = 'rgba(34, 24, 20, 0.5)';
   ctx.fill();
-  ctx.textBaseline = 'middle';
-  if (list.length === 0) {
-    ctx.fillStyle = INK;
-    ctx.font = `800 36px ${FONT}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('被害なし。えらい！', bx + bw / 2, by + bh / 2);
-  }
-  list.forEach((e, i) => {
-    const y = by + 44 + i * 56;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = INK;
-    ctx.font = `800 34px ${FONT}`;
-    ctx.fillText(e.label, bx + 34, y);
-    const n = e.count > 0 ? (e.key === 'tissue' ? `${e.count}枚` : `×${e.count}`) : '';
-    ctx.textAlign = 'right';
-    ctx.font = `800 38px ${FONT}`;
-    ctx.fillText(n, bx + bw - 34, y);
-    ctx.strokeStyle = '#e6d3c2';
-    ctx.setLineDash([3, 9]);
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.font = `800 34px ${FONT}`;
-    const s0 = bx + 34 + ctx.measureText(e.label).width + 16;
-    ctx.font = `800 38px ${FONT}`;
-    const s1 = bx + bw - 34 - ctx.measureText(n).width - 16;
-    ctx.moveTo(s0, y + 8); ctx.lineTo(s1, y + 8);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  });
+  ctx.fillStyle = '#ff4b5c';
+  ctx.beginPath(); ctx.arc(-pw / 2 + 44, -ph / 2 + 42, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillText(`LIVE  ${photo ? photo.time : ''}`, -pw / 2 + 62, -ph / 2 + 43);
+  // 名前と★
+  ctx.fillStyle = INK;
+  ctx.font = `800 50px ${FONT}`;
+  const name = photo ? photo.name : '写真なし';
+  ctx.fillText(name, -pw / 2, ph / 2 + 70);
+  const nw = ctx.measureText(name).width;
+  if (photo && photo.stars) stars(ctx, photo.stars, -pw / 2 + nw + 26, ph / 2 + 70, 48);
+  ctx.textAlign = 'right';
+  ctx.font = `500 26px ${FONT}`;
+  ctx.fillStyle = '#b89a86';
+  ctx.fillText(photo ? `${photo.score}pt` : '', pw / 2, ph / 2 + 72);
+  ctx.restore();
 
-  // 右側：顔と吹き出し
+  // 顔と吹き出し
   const portrait = await loadImg(portraitURL);
-  const cx = 860, cy = 900, cr = 150;
+  const cx = 190, cy = 1135, cr = 105;
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, cr, 0, Math.PI * 2);
@@ -182,85 +137,62 @@ export async function makeShareCanvas(result, portraitURL) {
   ctx.clip();
   if (portrait) drawCover(ctx, portrait, cx - cr, cy - cr, cr * 2, cr * 2);
   ctx.restore();
-  ctx.lineWidth = 10;
-  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#fff';
   ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.stroke();
 
-  // 吹き出し
-  ctx.font = `800 30px ${FONT}`;
-  const lines = wrapText(ctx, result.caption, 300).slice(0, 3);
-  const qh = 40 + lines.length * 42;
-  const qx = 690, qy = 1075, qw = 340;
-  ctx.fillStyle = '#ffffff';
-  rr(ctx, qx, qy, qw, qh, 28);
+  const cap = photo ? `「${photo.caption}」` : '「今日はずっとねてました」';
+  ctx.font = `800 38px ${FONT}`;
+  const lines = wrapText(ctx, cap, 620).slice(0, 2);
+  const bx = 330, by = 1062, bw = 690, bh = 60 + lines.length * 50;
+  rr(ctx, bx, by, bw, bh, 30);
+  ctx.fillStyle = '#fff';
   ctx.fill();
   ctx.lineWidth = 5;
   ctx.strokeStyle = '#f5b9a6';
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(cx - 20, qy + 2); ctx.lineTo(cx, qy - 26); ctx.lineTo(cx + 20, qy + 2);
-  ctx.fillStyle = '#ffffff';
+  ctx.moveTo(bx + 2, by + 50); ctx.lineTo(bx - 28, by + 70); ctx.lineTo(bx + 2, by + 90);
+  ctx.fillStyle = '#fff';
   ctx.fill();
   ctx.fillStyle = INK;
-  ctx.textAlign = 'center';
-  lines.forEach((l, i) => ctx.fillText(l, qx + qw / 2, qy + 40 + i * 42));
+  ctx.textAlign = 'left';
+  lines.forEach((l, i) => ctx.fillText(l, bx + 34, by + 55 + i * 50));
 
   // 下部
   ctx.textAlign = 'center';
-  ctx.font = `800 36px ${FONT}`;
-  const foot = `反省：${result.hansei}%　かわいさ：`;
-  const kw = `${result.kawaii}%`;
-  const fw = ctx.measureText(foot).width, kww = ctx.measureText(kw).width;
-  const fx = W / 2 - (fw + kww) / 2;
-  ctx.textAlign = 'left';
+  ctx.font = `800 30px ${FONT}`;
   ctx.fillStyle = INK;
-  ctx.fillText(foot, fx, 1286);
-  ctx.fillStyle = '#ef6f8e';
-  ctx.fillText(kw, fx + fw, 1286);
-  paw(ctx, 90, 1290, 22, '#f5b9a6');
-  paw(ctx, W - 90, 1290, 22, '#f5b9a6');
-
-  // じけん（1つだけ）
-  const hi = result.incidents.find((id) => result.newIncidents.includes(id)) || result.incidents[0];
-  if (hi) {
-    ctx.font = `800 28px ${FONT}`;
-    const t = `じけん：${INCIDENT_MAP[hi].name}${result.maxChain >= 2 ? ` ・ 最大${result.maxChain}連鎖` : ''}`;
-    const w = ctx.measureText(t).width + 40;
-    rr(ctx, W - 60 - w, py + ph - 70, w, 50, 25);
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.fill();
-    ctx.fillStyle = INK;
-    ctx.textAlign = 'center';
-    ctx.fillText(t, W - 60 - w / 2, py + ph - 44);
-  }
+  const meta = `本日の被害 ${yen(result.damage)} ・ アルバム ${albumCount}`;
+  ctx.fillText(meta, W / 2, 1262);
   ctx.font = `500 24px ${FONT}`;
   ctx.fillStyle = '#b89a86';
-  ctx.textAlign = 'right';
-  ctx.fillText('#うちの子おるすばん', W - 60, 1244);
+  ctx.fillText('#うちの子おるすばん', W / 2, 1300);
+  paw(ctx, 90, 1280, 22, '#f5b9a6');
+  paw(ctx, W - 90, 1280, 22, '#f5b9a6');
   return cv;
 }
 
-export function shareText(result) {
-  return `${result.name}のお留守番報告書：被害総額${yen(result.total)}（${result.verdictLabel}）「${result.caption}」 #うちの子おるすばん`;
+export function shareText(result, photo) {
+  const p = photo ? `「${photo.name}」${'★'.repeat(photo.stars)}` : '';
+  return `昼休みにみまもりカメラをのぞいたら、${result.name}の${p}が撮れました。 #うちの子おるすばん`;
 }
 
 /** 共有（非対応ならプレビュー＋保存） */
-export async function shareResult(result, portraitURL, ui, mode = 'share') {
-  const cv = await makeShareCanvas(result, portraitURL);
+export async function shareResult(result, photo, portraitURL, albumCount, mode = 'share') {
+  const cv = await makeShareCanvas(result, photo, portraitURL, albumCount);
   const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
-  const file = new File([blob], `orusuban-${Date.now()}.png`, { type: 'image/png' });
-  const text = shareText(result);
+  const file = new File([blob], `uchinoko-${Date.now()}.png`, { type: 'image/png' });
+  const text = shareText(result, photo);
   if (mode === 'share' && navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], text, title: 'お留守番報告書' });
+      await navigator.share({ files: [file], text, title: 'みまもり日記' });
       return 'shared';
     } catch (e) {
       if (e && e.name === 'AbortError') return 'cancel';
     }
   }
-  // プレビュー表示と保存
   const url = URL.createObjectURL(blob);
-  const modal = document.getElementById('share-modal');
   document.getElementById('share-img').src = url;
   const dl = document.getElementById('share-dl');
   dl.href = url;
@@ -268,7 +200,7 @@ export async function shareResult(result, portraitURL, ui, mode = 'share') {
   document.getElementById('share-note').textContent = mode === 'share'
     ? 'この環境では直接シェアできないため、画像を保存してから投稿してください（スマホは画像を長押し）'
     : '画像を保存できます（スマホは画像を長押し）';
-  modal.classList.remove('hidden');
+  document.getElementById('share-modal').classList.remove('hidden');
   if (mode === 'save') {
     try { dl.click(); } catch (e) { /* noop */ }
   }

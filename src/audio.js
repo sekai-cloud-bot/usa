@@ -213,6 +213,29 @@ export class Audio {
       case 'surprise': this._osc('sine', 500, 1100, 0.12, 0.12); break;
       case 'ok': this._osc('triangle', mtof(79), mtof(79), 0.1, 0.1); this._osc('triangle', mtof(84), mtof(84), 0.16, 0.1, 0.08); break;
       case 'ui': this._osc('sine', 700, 900, 0.05, 0.09); break;
+      case 'shutter':
+        this._noise('highpass', 3000, 0.7, 0.04, 0.35);
+        this._osc('square', 1800, 900, 0.03, 0.05);
+        this._noise('bandpass', 1800, 1.5, 0.05, 0.25, 0.07);
+        break;
+      case 'pop':
+        this._osc('sine', 300, 700, 0.09, 0.25);
+        this._noise('bandpass', 900, 1, 0.06, 0.15);
+        break;
+      case 'call':
+        this._osc('triangle', mtof(81), mtof(81), 0.12, 0.12);
+        this._osc('triangle', mtof(88), mtof(88), 0.2, 0.12, 0.1);
+        break;
+      case 'static': this._noise('bandpass', 2400, 0.4, 0.4, 0.12); break;
+      case 'ping': this._osc('sine', 1320, 1320, 0.12, 0.08); this._osc('sine', 1760, 1760, 0.16, 0.07, 0.1); break;
+      case 'doorbell':
+        this._osc('sine', mtof(76), mtof(76), 0.9, 0.22);
+        this._osc('sine', mtof(72), mtof(72), 1.3, 0.22, 0.45);
+        break;
+      case 'crunch':
+        for (let i = 0; i < 3; i++) this._noise('bandpass', 2200 + r() * 800, 2, 0.04, 0.2, i * 0.09);
+        break;
+      case 'yawn': this._osc('sine', 520, 300, 0.9, 0.05); break;
     }
   }
 

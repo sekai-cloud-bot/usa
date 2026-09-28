@@ -13,12 +13,12 @@ export const COLORS = [
 ];
 
 export const BREEDS = {
-  bichon: { label: 'ビション', color: 'white', fluff: 1.0, ear: 'fluffy', tail: 'pom', body: 'chibi', snout: 0.55, legs: 0.9, head: 1.18, eye: 1.0, pattern: 'solid' },
-  poodle: { label: 'トイプードル', color: 'apricot', fluff: 0.82, ear: 'fluffy', tail: 'pom', body: 'normal', snout: 0.95, legs: 1.1, head: 1.0, eye: 1.0, pattern: 'solid' },
-  pome: { label: 'ポメラニアン', color: 'red', fluff: 0.92, ear: 'pointy', tail: 'plume', body: 'chibi', snout: 0.5, legs: 0.8, head: 1.08, eye: 1.05, pattern: 'light' },
-  shiba: { label: '柴', color: 'red', fluff: 0.18, ear: 'pointy', tail: 'curl', body: 'normal', snout: 1.0, legs: 1.1, head: 1.0, eye: 0.9, pattern: 'urajiro' },
-  chihuahua: { label: 'チワワ', color: 'cream', fluff: 0.05, ear: 'big', tail: 'thin', body: 'chibi', snout: 0.55, legs: 1.05, head: 1.12, eye: 1.3, pattern: 'light' },
-  dachs: { label: 'ダックス', color: 'brown', fluff: 0.3, ear: 'long', tail: 'thin', body: 'long', snout: 1.25, legs: 0.62, head: 0.95, eye: 1.0, pattern: 'solid' },
+  bichon: { label: 'ビション', personality: 'amaenbo', color: 'white', fluff: 1.0, ear: 'fluffy', tail: 'pom', body: 'chibi', snout: 0.55, legs: 0.9, head: 1.18, eye: 1.0, pattern: 'solid' },
+  poodle: { label: 'トイプードル', personality: 'yancha', color: 'apricot', fluff: 0.82, ear: 'fluffy', tail: 'pom', body: 'normal', snout: 0.95, legs: 1.1, head: 1.0, eye: 1.0, pattern: 'solid' },
+  pome: { label: 'ポメラニアン', personality: 'yancha', color: 'red', fluff: 0.92, ear: 'pointy', tail: 'plume', body: 'chibi', snout: 0.5, legs: 0.8, head: 1.08, eye: 1.05, pattern: 'light' },
+  shiba: { label: '柴', personality: 'nebosuke', color: 'red', fluff: 0.18, ear: 'pointy', tail: 'curl', body: 'normal', snout: 1.0, legs: 1.1, head: 1.0, eye: 0.9, pattern: 'urajiro' },
+  chihuahua: { label: 'チワワ', personality: 'amaenbo', color: 'cream', fluff: 0.05, ear: 'big', tail: 'thin', body: 'chibi', snout: 0.55, legs: 1.05, head: 1.12, eye: 1.3, pattern: 'light' },
+  dachs: { label: 'ダックス', personality: 'kuishinbo', color: 'brown', fluff: 0.3, ear: 'long', tail: 'thin', body: 'long', snout: 1.25, legs: 0.62, head: 0.95, eye: 1.0, pattern: 'solid' },
 };
 
 export const EARS = [
@@ -47,7 +47,7 @@ export function breedParams(breed, name) {
   const b = BREEDS[breed];
   return {
     name: name || 'うさ', breed, color: b.color, fluff: b.fluff, ear: b.ear, tail: b.tail, body: b.body,
-    snout: b.snout, legs: b.legs, head: b.head, eye: b.eye, pattern: b.pattern,
+    snout: b.snout, legs: b.legs, head: b.head, eye: b.eye, pattern: b.pattern, personality: b.personality,
   };
 }
 
@@ -73,6 +73,7 @@ function mats() {
   M.tongue = new THREE.MeshStandardMaterial({ color: 0xf07a8c, roughness: 0.5 });
   M.blush = new THREE.MeshBasicMaterial({ color: 0xff9aa6, transparent: true, opacity: 0.38, depthWrite: false });
   M.innerEar = new THREE.MeshStandardMaterial({ color: 0xf2b6ad, roughness: 0.9, flatShading: true });
+  M.mouth = new THREE.MeshBasicMaterial({ color: 0x7a3444 });
   for (const k in M) M[k].userData.shared = true;
   return M;
 }
@@ -235,6 +236,14 @@ export function buildDog(params) {
   tongue.position.set(0, muzzleY - headR * 0.24, noseZ - headR * 0.14);
   head.add(tongue);
 
+  // あくび・吠える時の口
+  const mouthOpen = new THREE.Mesh(new THREE.CircleGeometry(headR * 0.14, 14), m.mouth);
+  mouthOpen.position.set(0, muzzleY - headR * 0.2, noseZ - headR * 0.04);
+  mouthOpen.scale.set(1, 0.01, 1);
+  mouthOpen.visible = false;
+  mouthOpen.renderOrder = 2;
+  head.add(mouthOpen);
+
   const blushGeo = new THREE.CircleGeometry(headR * 0.16, 14);
   const blush = [];
   for (const s of [-1, 1]) {
@@ -355,7 +364,7 @@ export function buildDog(params) {
 
   const top = bodyY + bodyR * 0.5 + headR * 0.62 + headR * 1.1;
   return {
-    root, body, neck, head, headMesh, eyes, nose, tongue, blush, mouth, ears, tail, legs, blob,
+    root, body, neck, head, headMesh, eyes, nose, tongue, blush, mouth, mouthOpen, ears, tail, legs, blob,
     dims: { legLen, bodyY, bodyLen, bodyR, headR, top, earType: params.ear, tailType: params.tail },
   };
 }

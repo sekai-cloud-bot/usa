@@ -1,57 +1,78 @@
 import { yen } from './util.js';
-import { INCIDENTS, INCIDENT_MAP } from './incidents.js';
+import { MOMENTS, MOMENT_MAP, PERSONALITIES } from './moments.js';
 import { BREEDS, COLORS, EARS, TAILS, BODIES, breedParams } from './dogModel.js';
 import { getSave } from './save.js';
 import { audio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
+const SCREENS = { title: 'screen-title', custom: 'screen-custom', album: 'screen-album', collection: 'screen-collection', pause: 'screen-pause', hud: 'hud' };
 
-const SCREENS = { title: 'screen-title', custom: 'screen-custom', report: 'screen-report', zukan: 'screen-zukan', pause: 'screen-pause', hud: 'hud' };
-
-const UNITS = { tissue: '枚' };
+export function starsHTML(n, max = 3) {
+  let s = '';
+  for (let i = 0; i < max; i++) s += i < n ? '★' : '<span class="off">★</span>';
+  return s;
+}
 
 export class UI {
   constructor() {
-    this.el = {};
-    for (const id of ['hud', 'hud-name', 'hud-status', 'hud-dot', 'avatar', 'odai', 'odai-text', 'clock-text', 'clock-fill', 'yen', 'log', 'chain', 'banner', 'hint',
-      'act-label', 'act-ico', 'btn-act', 'btn-dash', 'zukan-count', 'title-best', 'in-name', 'opt-breed', 'opt-color', 'opt-ear', 'opt-tail', 'opt-body', 'in-fluff',
-      'rp-title', 'rp-photo', 'rp-verdict', 'rp-total', 'rp-best', 'rp-quote', 'rp-items', 'rp-incidents', 'rp-next', 'rp-hansei', 'rp-kawaii', 'zk-count', 'zk-list',
-      'sound-state', 'quality-state']) {
-      this.el[id] = $(id);
-    }
-    this.yenShown = 0;
-    this.yenTarget = 0;
     this.cb = {};
-    this.chainTimer = null;
-    this.bannerTimer = null;
-    this.clockEl = document.querySelector('.clock');
-
-    const on = (id, name) => $(id).addEventListener('click', (e) => { audio.unlock(); audio.play('ui'); this.cb[name]?.(e); });
-    on('btn-start', 'start');
-    on('btn-custom', 'custom');
-    on('btn-zukan', 'zukan');
-    on('btn-custom-ok', 'customOk');
-    on('btn-again', 'again');
-    on('btn-share', 'share');
-    on('btn-save', 'save');
-    on('btn-rp-custom', 'custom');
-    on('btn-rp-title', 'title');
-    on('btn-zukan-close', 'zukanClose');
-    on('btn-pause', 'pause');
-    on('btn-resume', 'resume');
-    on('btn-restart', 'restart');
-    on('btn-quit', 'title');
-    on('btn-sound', 'sound');
-    on('btn-quality', 'quality');
-    on('btn-share-close', 'shareClose');
+    this.el = new Proxy({}, { get: (t, k) => t[k] || (t[k] = $(k)) });
+    const click = (id, name) => $(id).addEventListener('click', (e) => { audio.unlock(); audio.play('ui'); this.cb[name]?.(e); });
+    // すぐ反応してほしいボタンは pointerdown
+    const press = (id, name) => {
+      const b = $(id);
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        audio.unlock();
+        b.classList.add('pressed');
+        this.cb[name]?.(e);
+      });
+      const up = () => b.classList.remove('pressed');
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointerleave', up);
+      b.addEventListener('pointercancel', up);
+      b.addEventListener('contextmenu', (e) => e.preventDefault());
+    };
+    click('btn-start', 'start');
+    click('btn-custom', 'custom');
+    click('btn-collection', 'collection');
+    click('btn-collection-close', 'collectionClose');
+    click('btn-custom-ok', 'customOk');
+    click('btn-again', 'again');
+    click('btn-share', 'share');
+    click('btn-save', 'save');
+    click('btn-al-custom', 'custom');
+    click('btn-al-title', 'title');
+    click('btn-pause', 'pause');
+    click('btn-end', 'end');
+    click('btn-resume', 'resume');
+    click('btn-restart', 'restart');
+    click('btn-quit', 'title');
+    click('btn-sound', 'sound');
+    click('btn-quality', 'quality');
+    click('btn-share-close', 'shareClose');
+    press('btn-shutter', 'shutter');
+    press('g-treat', 'treat');
+    press('g-call', 'call');
+    press('g-laser', 'laser');
+    press('g-find', 'find');
+    press('g-switch', 'switch');
+    // ズームボタンは押しっぱなしで連続
+    for (const [id, f] of [['zoom-in', 1.035], ['zoom-out', 1 / 1.035]]) {
+      const b = $(id);
+      let timer = null;
+      const stop = () => { clearInterval(timer); timer = null; };
+      b.addEventListener('pointerdown', (e) => { e.preventDefault(); this.cb.zoom?.(f); timer = setInterval(() => this.cb.zoom?.(f), 16); });
+      b.addEventListener('pointerup', stop);
+      b.addEventListener('pointerleave', stop);
+      b.addEventListener('pointercancel', stop);
+    }
   }
 
   on(name, fn) { this.cb[name] = fn; }
 
   show(name, overlay = false) {
-    if (!overlay) {
-      for (const k in SCREENS) if (k !== name) $(SCREENS[k]).classList.add('hidden');
-    }
+    if (!overlay) for (const k in SCREENS) if (k !== name) $(SCREENS[k]).classList.add('hidden');
     $(SCREENS[name]).classList.remove('hidden');
     if (name === 'title') this.refreshTitle();
   }
@@ -59,59 +80,67 @@ export class UI {
 
   refreshTitle() {
     const sv = getSave();
-    const found = Object.keys(sv.incidents).length;
-    this.el['zukan-count'].textContent = `${found}/${INCIDENTS.length}`;
-    this.el['title-best'].textContent = sv.best.yen > 0 ? `自己ベスト被害総額 ${yen(sv.best.yen)} ・ 最大${sv.best.chain}連鎖` : '';
-    $('btn-start').textContent = sv.dog ? `${sv.dog.name}とおるすばん` : 'おるすばんスタート';
+    const got = Object.keys(sv.album).filter((k) => MOMENT_MAP[k]).length;
+    this.el['collection-count'].textContent = `${got}/${MOMENTS.length}`;
+    this.el['title-best'].textContent = sv.best.score > 0 ? `ベストショット ${sv.best.score}pt` : '';
+    $('btn-start').textContent = sv.dog ? `${sv.dog.name}をみまもる` : 'みまもりスタート';
   }
 
   // ---------------- HUD ----------------
-  resetHud(name) {
+  resetHud(name, film, treats) {
     this.el['hud-name'].textContent = name;
-    this.el.log.innerHTML = '';
-    this.el.chain.className = 'chain';
+    this.el.strip.innerHTML = '';
+    this.el.alerts.innerHTML = '';
     this.el.banner.className = 'banner';
     this.hint(null);
-    this.yenShown = 0;
-    this.yenTarget = 0;
-    this.el.yen.textContent = '¥0';
+    this.setFilm(film);
+    this.setTreats(treats);
+    this.setDamage(0);
+    this.setLaser(false, 1);
   }
   setAvatar(url) { if (url) this.el.avatar.src = url; }
   setCine(on) { this.el.hud.classList.toggle('cine', !!on); }
-  setOdai(text, done) {
-    this.el['odai-text'].textContent = text;
-    this.el.odai.classList.toggle('done', !!done);
+  setCamName(n) { this.el['cam-name'].textContent = n; }
+  setStatus(text) {
+    if (this._status === text) return;
+    this._status = text;
+    const s = this.el['hud-status'];
+    s.textContent = text;
+    s.classList.remove('pulse');
+    void s.offsetWidth;
+    s.classList.add('pulse');
   }
-  setYen(v, bump) {
-    this.yenTarget = v;
-    if (bump) {
-      const e = this.el.yen;
-      e.classList.remove('bump');
-      void e.offsetWidth;
-      e.classList.add('bump');
-    }
-  }
-  setClock(text, frac, alert) {
+  setClock(text, frac) {
     if (this._clock !== text) { this.el['clock-text'].textContent = text; this._clock = text; }
     this.el['clock-fill'].style.width = Math.min(100, frac * 100).toFixed(1) + '%';
-    this.clockEl.classList.toggle('alert', !!alert);
   }
-  setStatus(text, lvl) {
-    if (this._status !== text) { this.el['hud-status'].textContent = text; this._status = text; }
-    const d = this.el['hud-dot'];
-    d.classList.toggle('warn', lvl === 'warn');
-    d.classList.toggle('alert', lvl === 'alert');
+  setFilm(n) {
+    this.el.film.textContent = n;
+    this.el['btn-shutter'].classList.toggle('empty', n <= 0);
   }
-  banner(text, isNew = false, cls = '') {
+  setTreats(n) {
+    this.el['treat-count'].textContent = n;
+    this.el['g-treat'].classList.toggle('off', n <= 0);
+  }
+  setDamage(v) {
+    const s = `被害 ${yen(v)}`;
+    if (this._dmg !== s) { this.el.damage.textContent = s; this._dmg = s; }
+  }
+  setLaser(on, frac) {
+    this.el['g-laser'].classList.toggle('on', !!on);
+    this.el['g-laser'].classList.toggle('off', frac <= 0.02);
+    this.el['laser-bat'].style.width = Math.max(0, frac * 100).toFixed(0) + '%';
+  }
+  setZoom(z) {
+    const s = z.toFixed(1) + '×';
+    if (this._zoom === s) return;
+    this._zoom = s;
+    this.el['zoom-val'].textContent = s;
+    this.el['zoom-fill'].style.height = ((z - 1) / 4 * 100).toFixed(0) + '%';
+  }
+  banner(text, cls = '') {
     const b = this.el.banner;
-    b.innerHTML = '';
-    b.append(text);
-    if (isNew) {
-      const s = document.createElement('span');
-      s.className = 'new';
-      s.textContent = 'NEW';
-      b.append(s);
-    }
+    b.textContent = text;
     b.className = 'banner ' + cls;
     void b.offsetWidth;
     b.classList.add('show');
@@ -124,70 +153,89 @@ export class UI {
     h.innerHTML = html;
     h.classList.add('show');
   }
-  showChain(n, mult) {
-    const c = this.el.chain;
-    c.innerHTML = `＼${n}連鎖！／<small>×${mult.toFixed(1)}</small>`;
-    c.className = 'chain';
-    void c.offsetWidth;
-    c.classList.add('show');
-    clearTimeout(this.chainTimer);
-    this.chainTimer = setTimeout(() => c.classList.add('fade'), 1600);
+  toast(text) {
+    const t = this.el.toast;
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => t.classList.remove('show'), 1400);
   }
-  log(time, html) {
-    const item = document.createElement('div');
-    item.className = 'log-item';
-    item.innerHTML = `<b>${time}</b>${html}`;
-    const L = this.el.log;
-    L.prepend(item);
-    const items = L.querySelectorAll('.log-item');
-    items.forEach((it, i) => { if (i > 0) it.classList.add('old'); if (i > 2) it.remove(); });
+  speech(text) {
+    const s = this.el.speech;
+    s.textContent = text;
+    s.classList.remove('show');
+    void s.offsetWidth;
+    s.classList.add('show');
   }
-  setAct(held, hasTarget, active, target) {
-    let label, ico;
-    if (held) {
-      if (held.kind === 'slipper' || held.kind === 'book') { label = active ? 'かみかみ' : 'はなす'; ico = active ? 'ico-chew' : 'ico-hand'; }
-      else if (held.kind === 'tissue') { label = active ? 'ぶんぶん' : 'はなす'; ico = active ? 'ico-shake' : 'ico-hand'; }
-      else { label = active ? 'ぶんぶん' : 'はなす'; ico = active ? 'ico-shake' : 'ico-hand'; }
-    } else if (hasTarget) { label = 'くわえる'; ico = 'ico-bone'; }
-    else { label = 'わん！'; ico = 'ico-bone'; }
-    const key = label + ico + hasTarget + !!held + active;
-    if (this._act === key) return;
-    this._act = key;
-    this.el['act-label'].textContent = label;
-    this.el['act-ico'].className = ico;
-    const b = this.el['btn-act'];
-    b.classList.toggle('ready', !!hasTarget && !held);
-    b.classList.toggle('holding', !!held);
+  flash() {
+    const f = this.el.flash;
+    f.classList.remove('show');
+    void f.offsetWidth;
+    f.classList.add('show');
   }
-  setDashReady(r) {
-    if (this._dash === r) return;
-    this._dash = r;
-    this.el['btn-dash'].classList.toggle('cool', !r);
+  staticFx(boot = false) {
+    const s = this.el.static;
+    s.className = 'static';
+    void s.offsetWidth;
+    s.classList.add(boot ? 'boot' : 'show');
+  }
+  bootCam() { this.staticFx(true); }
+
+  /** 画面の外で起きた物音を、画面のふちに矢印で出す */
+  edgeAlert(angle, text) {
+    const W = window.innerWidth, H = window.innerHeight;
+    const cx = W / 2, cy = H / 2;
+    const dx = Math.cos(angle), dy = -Math.sin(angle);
+    const mx = W / 2 - 90, my = H / 2 - 110;
+    const k = Math.min(mx / Math.max(1e-3, Math.abs(dx)), my / Math.max(1e-3, Math.abs(dy)));
+    const el = document.createElement('div');
+    el.className = 'alert';
+    el.innerHTML = '<i class="arr"></i><span></span>';
+    el.children[1].textContent = text;
+    el.children[0].style.transform = `rotate(${Math.atan2(dy, dx) * 180 / Math.PI + 90}deg)`;
+    el.style.left = cx + dx * k + 'px';
+    el.style.top = cy + dy * k + 'px';
+    this.el.alerts.appendChild(el);
+    setTimeout(() => el.remove(), 2200);
+    while (this.el.alerts.children.length > 3) this.el.alerts.firstChild.remove();
   }
 
-  update(dt) {
-    if (this.yenShown !== this.yenTarget) {
-      const d = this.yenTarget - this.yenShown;
-      this.yenShown += d * (1 - Math.exp(-9 * dt));
-      if (Math.abs(this.yenTarget - this.yenShown) < 5) this.yenShown = this.yenTarget;
-      const s = yen(Math.round(this.yenShown / 10) * 10);
-      if (s !== this._yenText) { this.el.yen.textContent = s; this._yenText = s; }
-    }
+  showShot(p) {
+    const card = this.el.shotcard;
+    this.el['shot-img'].src = p.url;
+    this.el['shot-stars'].innerHTML = p.stars > 0 ? starsHTML(p.stars) : '<span class="off">★★★</span>';
+    this.el['shot-name'].textContent = p.name + (p.blurred ? '（ブレ）' : '');
+    this.el['shot-pts'].textContent = `${p.score}pt${p.face ? ' ・ 顔◎' : ''}`;
+    card.classList.remove('show');
+    void card.offsetWidth;
+    card.classList.add('show');
+    const th = document.createElement('img');
+    th.className = 'th';
+    th.src = p.url;
+    const strip = this.el.strip;
+    strip.appendChild(th);
+    while (strip.children.length > 4) strip.firstChild.remove();
   }
 
   // ---------------- うちの子エディタ ----------------
   buildCustom(params, onChange) {
     this.customParams = { ...params };
     const p = this.customParams;
+    if (!p.personality) p.personality = BREEDS[p.breed]?.personality || 'amaenbo';
     const name = this.el['in-name'];
     name.value = p.name;
     name.oninput = () => { p.name = name.value.trim() || 'うさ'; onChange(p, false); };
-    const chips = (el, items, key, labelKey = 'label', rebuild = true) => {
+    const chips = (el, items, key, rebuild = true) => {
       el.innerHTML = '';
       for (const it of items) {
         const b = document.createElement('button');
         b.className = 'chip' + (p[key] === it.id ? ' on' : '');
-        b.textContent = it[labelKey];
+        b.textContent = it.label;
+        if (it.desc) {
+          const s = document.createElement('small');
+          s.textContent = it.desc;
+          b.append(s);
+        }
         b.onclick = () => {
           audio.unlock();
           audio.play('ui');
@@ -205,6 +253,7 @@ export class UI {
       }
     };
     chips(this.el['opt-breed'], Object.entries(BREEDS).map(([id, b]) => ({ id, label: b.label })), 'breed');
+    chips(this.el['opt-pers'], PERSONALITIES, 'personality', false);
     chips(this.el['opt-ear'], EARS, 'ear');
     chips(this.el['opt-tail'], TAILS, 'tail');
     chips(this.el['opt-body'], BODIES, 'body');
@@ -231,114 +280,93 @@ export class UI {
     fl.oninput = () => { p.fluff = fl.value / 100; onChange(p, true); };
   }
 
-  // ---------------- 報告書 ----------------
-  showReport(r) {
-    this.show('report');
-    this.el['rp-title'].textContent = `${r.name}のお留守番報告書`;
-    if (r.photo) this.el['rp-photo'].src = r.photo;
-    const v = this.el['rp-verdict'];
-    v.textContent = r.verdictLabel;
-    v.classList.toggle('mint', r.verdict === 'innocent' || r.verdict === 'goodboy' || r.verdict === 'nap');
-    this.el['rp-quote'].textContent = r.caption;
-    this.el['rp-best'].textContent = r.isBest && r.total > 0 ? (r.prevBest > 0 ? '自己ベスト更新！' : 'はじめての記録！') : (r.prevBest > 0 ? `自己ベスト ${yen(Math.max(r.prevBest, r.total))}` : '');
-    this.el['rp-hansei'].textContent = r.hansei + '%';
-    this.el['rp-kawaii'].textContent = r.kawaii + '%';
-
-    // 明細
-    const items = this.el['rp-items'];
-    items.innerHTML = '';
-    const entries = Object.entries(r.ledger);
-    const normal = entries.filter(([, e]) => !e.bonus).sort((a, b) => b[1].yen - a[1].yen);
-    const bonus = entries.filter(([, e]) => e.bonus);
-    const row = (key, e, isBonus) => {
+  // ---------------- 昼休みのアルバム ----------------
+  showAlbum(r) {
+    this.show('album');
+    this.albumResult = r;
+    this.el['al-title'].textContent = `${r.name}の昼休みアルバム`;
+    const photos = r.photos;
+    const sorted = [...photos].sort((a, b) => b.score - a.score);
+    const best = sorted[0];
+    const totalPts = photos.reduce((s, p) => s + p.score, 0);
+    this.el['al-sub'].textContent = photos.length ? `${photos.length}枚撮影 ・ 合計 ${totalPts}pt` : '1枚も撮らなかった昼休み';
+    const grid = this.el['al-grid'];
+    grid.innerHTML = '';
+    photos.forEach((p) => {
       const d = document.createElement('div');
-      d.className = 'ri' + (isBonus ? ' bonus' : '');
-      const n = !isBonus && e.count > 0 ? (UNITS[key] ? `${e.count}${UNITS[key]}` : `×${e.count}`) : '';
-      d.innerHTML = `<span></span><span class="dots"></span><span class="n"></span><span class="y"></span>`;
-      d.children[0].textContent = e.label.replace(/^クッション破裂$/, 'クッション');
-      d.children[2].textContent = n;
-      d.children[3].textContent = yen(e.yen);
-      items.append(d);
-    };
-    // 同じラベルはまとめる
-    const merged = {};
-    for (const [k, e] of normal) {
-      const lbl = { cushion: 'クッション', slipper: 'スリッパ', book: '本' }[k] || e.label;
-      const m = merged[lbl] || (merged[lbl] = { key: k, label: lbl, count: 0, yen: 0 });
-      m.count += e.count;
-      m.yen += e.yen;
-    }
-    const mergedList = Object.values(merged).sort((a, b) => b.yen - a.yen);
-    mergedList.slice(0, 7).forEach((e) => row(e.key, e, false));
-    if (mergedList.length === 0) {
-      const d = document.createElement('div');
-      d.className = 'ri';
-      d.textContent = '被害なし。えらい！（ほんとに？）';
-      items.append(d);
-    }
-    for (const [k, e] of bonus) row(k, e, true);
+      d.className = 'al-item' + (p === best ? ' sel' : '');
+      d.innerHTML = '<img alt=""><div class="stars"></div><div class="n"></div>';
+      d.children[0].src = p.url;
+      d.children[1].innerHTML = p.stars ? starsHTML(p.stars) : '<span class="off">★★★</span>';
+      d.children[2].textContent = p.name;
+      d.onclick = () => {
+        audio.play('ui');
+        grid.querySelectorAll('.al-item').forEach((x) => x.classList.remove('sel'));
+        d.classList.add('sel');
+        this.setCover(p);
+      };
+      grid.append(d);
+    });
+    this.setCover(best || null);
 
-    // じけん
-    const inc = this.el['rp-incidents'];
-    inc.innerHTML = '';
-    for (const id of r.incidents) {
-      const t = document.createElement('span');
-      t.className = 'tag' + (r.newIncidents.includes(id) ? ' new' : '');
-      t.textContent = INCIDENT_MAP[id].name;
-      inc.append(t);
-    }
-    if (r.maxChain >= 2) {
+    const nw = this.el['al-new'];
+    nw.innerHTML = '';
+    for (const id of r.newIds) {
       const t = document.createElement('span');
       t.className = 'tag';
-      t.textContent = `最大${r.maxChain}連鎖`;
-      inc.append(t);
+      t.textContent = MOMENT_MAP[id].name;
+      nw.append(t);
     }
-
-    // 次に試したいこと
     const sv = getSave();
-    const notFound = INCIDENTS.filter((i) => !sv.incidents[i.id] && i.id !== 'goodboy');
-    const nx = this.el['rp-next'];
-    if (notFound.length) {
-      const pickN = notFound.slice(0, 2);
-      nx.innerHTML = `<div>つぎは… ${pickN.map((i) => `『？？？』<span style="font-weight:500">${i.hint}</span>`).join('<br>')}</div>`;
-    } else {
-      nx.textContent = 'じけん図鑑コンプリート！ 被害総額の自己ベストをねらおう';
-    }
-
-    // 合計のカウントアップ
-    const tot = this.el['rp-total'];
-    const start = performance.now();
-    const dur = Math.min(1600, 400 + r.total / 30);
-    let lastTick = 0;
-    const step = (now) => {
-      const k = Math.min(1, (now - start) / dur);
-      const e = 1 - Math.pow(1 - k, 3);
-      tot.textContent = yen(Math.round((r.total * e) / 10) * 10);
-      if (now - lastTick > 70 && k < 1) { lastTick = now; audio.play('tick', 1 + e * 0.5); }
-      if (k < 1) requestAnimationFrame(step);
-      else if (r.total > 0) audio.play('coin');
-    };
-    requestAnimationFrame(step);
-    $('screen-report').scrollTop = 0;
+    const missing = MOMENTS.filter((m) => !sv.album[m.id]);
+    const nx = this.el['al-next'];
+    if (missing.length) {
+      const pick = [...missing].sort(() => Math.random() - 0.5).slice(0, 2);
+      nx.innerHTML = 'まだ撮れていない瞬間：<br>' + pick.map((m) => `・${m.hint}`).join('<br>');
+    } else nx.textContent = 'アルバムコンプリート！ ★3をそろえよう';
+    const got = Object.keys(sv.album).filter((k) => MOMENT_MAP[k]).length;
+    this.el['al-meta'].innerHTML = `アルバム <b>${got}/${MOMENTS.length}</b> ・ 本日の被害 <b>${yen(r.damage)}</b> ・ おやつ ${r.treatsUsed}こ`;
+    $('screen-album').scrollTop = 0;
   }
 
-  // ---------------- 図鑑 ----------------
-  showZukan() {
+  setCover(p) {
+    this.cover = p;
+    const img = this.el['al-cover-img'];
+    if (!p) {
+      img.removeAttribute('src');
+      this.el['al-cover-stars'].innerHTML = '';
+      this.el['al-cover-name'].textContent = '写真なし';
+      this.el['al-cover-cap'].textContent = '次はシャッターを押してみよう';
+      return;
+    }
+    img.src = p.url;
+    this.el['al-cover-stars'].innerHTML = p.stars ? starsHTML(p.stars) : '';
+    this.el['al-cover-name'].textContent = p.name;
+    this.el['al-cover-cap'].textContent = `${p.time} 「${p.caption}」`;
+  }
+
+  // ---------------- コレクション ----------------
+  showCollection() {
     const sv = getSave();
-    const list = this.el['zk-list'];
+    const list = this.el['col-list'];
     list.innerHTML = '';
-    let found = 0;
-    for (const i of INCIDENTS) {
-      const f = !!sv.incidents[i.id];
-      if (f) found++;
+    let got = 0;
+    for (const m of MOMENTS) {
+      const a = sv.album[m.id];
+      if (a) got++;
       const d = document.createElement('div');
-      d.className = 'zk ' + (f ? 'found' : 'locked');
-      d.innerHTML = '<div class="t"></div><div class="h"></div>';
-      d.children[0].textContent = f ? i.name : '？？？';
-      d.children[1].textContent = f ? `+${yen(i.bonus)} ・ ${i.hint}` : `ヒント：${i.hint}`;
+      d.className = 'col' + (a ? '' : ' locked');
+      d.innerHTML = '<div class="ph"></div><div class="t"></div><div class="stars"></div><div class="h"></div>';
+      if (a && a.thumb) d.children[0].style.backgroundImage = `url(${a.thumb})`;
+      else if (!a) d.children[0].textContent = '？';
+      d.children[1].textContent = a ? m.name : '？？？';
+      d.children[2].innerHTML = a ? starsHTML(a.stars) : '';
+      d.children[3].textContent = a ? `ベスト ${a.score}pt` : `ヒント：${m.hint}`;
       list.append(d);
     }
-    this.el['zk-count'].textContent = `${found}/${INCIDENTS.length}`;
-    this.show('zukan', true);
+    this.el['col-count'].textContent = `${got}/${MOMENTS.length}`;
+    this.show('collection', true);
   }
+
+  update() {}
 }

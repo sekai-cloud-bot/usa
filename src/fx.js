@@ -130,7 +130,8 @@ function makeTextSprite(draw, w = 128, h = 128, scale = 0.5) {
 
 const ICONS = {
   tissue: '🧻', cushion: '🛋️', slipper: '🩴', ball: '⚽', plant: '🪴', mug: '☕', box: '📦', lamp: '💡',
-  trash: '🗑️', bed: '💤', teddy: '🧸', basket: '🧺', sun: '☀️', heart: '💗', q: '❓', ex: '❗', door: '🚪',
+  trash: '🗑️', bed: '🛏️', teddy: '🧸', basket: '🧺', sun: '☀️', heart: '💗', q: '❓', ex: '❗', door: '🚪',
+  treat: '🍪', sleep: '💤',
 };
 
 export class FX {

@@ -9,7 +9,8 @@ import { CamRig } from './camera.js';
 import { Game } from './game.js';
 import { audio } from './audio.js';
 import { loadSave, save, getSave } from './save.js';
-import { defaultDogParams } from './dogModel.js';
+import { defaultDogParams, BREEDS } from './dogModel.js';
+import { MOMENTS, MOMENT_MAP } from './moments.js';
 import { shareResult } from './share.js';
 import { isTouchDevice } from './util.js';
 
@@ -53,7 +54,7 @@ const room = buildRoom(scene, renderer);
 // 影なし画質用の、床の日だまり（窓の形を床に投影）
 const fakeSun = new THREE.Group();
 {
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false });
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   const panes = [[WINDOW.z0 + 0.05, -2.08], [-2.02, -1.24], [-1.16, -0.38], [-0.32, WINDOW.z1 - 0.05]];
   for (const [z0, z1] of panes) {
     const pts = [];
@@ -63,9 +64,7 @@ const fakeSun = new THREE.Group();
     }
     const g = new THREE.BufferGeometry().setFromPoints([pts[0], pts[1], pts[2], pts[0], pts[2], pts[3]]);
     g.computeVertexNormals();
-    const m = new THREE.Mesh(g, mat);
-    m.material.side = THREE.DoubleSide;
-    fakeSun.add(m);
+    fakeSun.add(new THREE.Mesh(g, mat));
   }
   fakeSun.visible = false;
   scene.add(fakeSun);
@@ -74,11 +73,84 @@ const fakeSun = new THREE.Group();
 const fx = new FX(scene, camera);
 const world = new World(scene, room, fx);
 const dog = new Dog(scene);
-dog.setParams(sv.dog || defaultDogParams());
+const initial = sv.dog || defaultDogParams();
+if (!initial.personality) initial.personality = BREEDS[initial.breed]?.personality || 'amaenbo';
+dog.setParams(initial);
 const input = new Input(canvas);
 const ui = new UI();
 const camRig = new CamRig(camera);
-const game = new Game({ scene, camera, camRig, world, dog, fx, ui, input, renderer, room });
+
+// ------------------------------------------------------------
+// 撮影（写真・アバター）
+// ------------------------------------------------------------
+function captureView(cam, w, h, blurred = false, type = 'image/jpeg') {
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const saved = { aspect: cam.aspect, view: cam.view ? { ...cam.view } : null };
+  cam.clearViewOffset();
+  cam.aspect = size.x / size.y;
+  cam.updateProjectionMatrix();
+  const bubbleVis = fx.bubble.visible, ringVis = fx.ring.visible;
+  fx.bubble.visible = false; fx.ring.visible = false;
+  renderer.render(scene, cam);
+  fx.bubble.visible = bubbleVis; fx.ring.visible = ringVis;
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const ctx = out.getContext('2d');
+  const r = w / h;
+  let sw = size.x, sh = size.x / r;
+  if (sh > size.y) { sh = size.y; sw = sh * r; }
+  if (blurred) ctx.filter = 'blur(3px)';
+  ctx.drawImage(renderer.domElement, (size.x - sw) / 2, (size.y - sh) / 2, sw, sh, 0, 0, w, h);
+  ctx.filter = 'none';
+  cam.aspect = saved.aspect;
+  if (saved.view && saved.view.enabled) cam.setViewOffset(saved.view.fullWidth, saved.view.fullHeight, saved.view.offsetX, saved.view.offsetY, saved.view.width, saved.view.height);
+  cam.updateProjectionMatrix();
+  return out.toDataURL(type, 0.86);
+}
+
+const portraitCam = new THREE.PerspectiveCamera(30, 1, 0.05, 20);
+function capturePortrait() {
+  dog.rig.root.updateMatrixWorld(true);
+  const head = new THREE.Vector3();
+  dog.rig.head.getWorldPosition(head);
+  const f = new THREE.Vector3(Math.sin(dog.heading), 0, Math.cos(dog.heading));
+  const dist = 0.62 + dog.rig.dims.headR * 1.5;
+  portraitCam.position.copy(head).addScaledVector(f, dist).add(new THREE.Vector3(0, 0.1, 0));
+  portraitCam.lookAt(head.x, head.y + 0.02, head.z);
+  const devVis = room.devices.map((d) => d.visible);
+  room.devices.forEach((d) => { d.visible = false; });
+  const url = captureView(portraitCam, 256, 256, false, 'image/png');
+  room.devices.forEach((d, i) => { d.visible = devVis[i]; });
+  return url;
+}
+
+let lastPortrait = null;
+function updateAvatar() {
+  const save0 = { h: dog.heading, look: dog.lookAt, hold: dog.lookHold, exp: dog.expr, pose: dog.poseTarget, p: { ...dog.pose }, pos: dog.pos.clone() };
+  dog.heading = 0;
+  dog.lookAt = null;
+  dog.lookYaw = 0;
+  dog.lookPitch = 0;
+  dog.blinking = 0;
+  dog.blinkT = 3;
+  dog.setExpr('happy');
+  dog.setPose('sit');
+  dog.pose.sit = 1; dog.pose.lie = 0; dog.pose.belly = 0; dog.pose.bow = 0;
+  dog.update(0.001, { x: 0, z: 0 }, null);
+  const url = capturePortrait();
+  ui.setAvatar(url);
+  lastPortrait = url;
+  dog.heading = save0.h;
+  dog.lookAt = save0.look;
+  dog.lookHold = save0.hold;
+  dog.setExpr(save0.exp);
+  dog.setPose(save0.pose);
+  Object.assign(dog.pose, save0.p);
+  dog.pos.copy(save0.pos);
+  dog.update(0.001, { x: 0, z: 0 }, null);
+}
+
+const game = new Game({ scene, camera, camRig, world, dog, fx, ui, input, renderer, room, capture: captureView });
 
 // ------------------------------------------------------------
 // 画質（端末負荷に合わせて自動調整）
@@ -89,8 +161,8 @@ const QUALITY = [
   { id: 'high', label: 'きれい', pr: 2, shadow: 2048 },
 ];
 let qLevel = isTouchDevice() ? 1 : 2;
-if (sv.settings.quality !== 'auto') qLevel = QUALITY.findIndex((q) => q.id === sv.settings.quality);
-let perf = { t: 0, frames: 0, grace: 3 };
+if (sv.settings.quality !== 'auto') qLevel = Math.max(0, QUALITY.findIndex((q) => q.id === sv.settings.quality));
+const perf = { t: 0, frames: 0, grace: 3 };
 
 function applyQuality(level) {
   qLevel = Math.max(0, Math.min(QUALITY.length - 1, level));
@@ -138,95 +210,29 @@ function resize() {
 window.addEventListener('resize', resize);
 
 // ------------------------------------------------------------
-// 撮影（報告書の写真・アバター）
-// ------------------------------------------------------------
-function captureView(cam, w, h, type = 'image/jpeg') {
-  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-  const aspect = size.x / size.y;
-  const saved = { aspect: cam.aspect, view: cam.view ? { ...cam.view } : null };
-  cam.clearViewOffset();
-  cam.aspect = aspect;
-  cam.updateProjectionMatrix();
-  const bubbleVis = fx.bubble.visible, ringVis = fx.ring.visible;
-  fx.bubble.visible = false; fx.ring.visible = false;
-  renderer.render(scene, cam);
-  fx.bubble.visible = bubbleVis; fx.ring.visible = ringVis;
-  const out = document.createElement('canvas');
-  out.width = w; out.height = h;
-  const ctx = out.getContext('2d');
-  const r = w / h;
-  let sw = size.x, sh = size.x / r;
-  if (sh > size.y) { sh = size.y; sw = sh * r; }
-  ctx.drawImage(renderer.domElement, (size.x - sw) / 2, (size.y - sh) / 2, sw, sh, 0, 0, w, h);
-  cam.aspect = saved.aspect;
-  if (saved.view && saved.view.enabled) cam.setViewOffset(saved.view.fullWidth, saved.view.fullHeight, saved.view.offsetX, saved.view.offsetY, saved.view.width, saved.view.height);
-  cam.updateProjectionMatrix();
-  return out.toDataURL(type, 0.88);
-}
-
-const portraitCam = new THREE.PerspectiveCamera(30, 1, 0.05, 20);
-function capturePortrait() {
-  dog.rig.root.updateMatrixWorld(true);
-  const head = new THREE.Vector3();
-  dog.rig.head.getWorldPosition(head);
-  const f = new THREE.Vector3(Math.sin(dog.heading), 0, Math.cos(dog.heading));
-  const dist = 0.62 + dog.rig.dims.headR * 1.5;
-  portraitCam.position.copy(head).addScaledVector(f, dist).add(new THREE.Vector3(0, 0.1, 0));
-  portraitCam.lookAt(head.x, head.y + 0.02, head.z);
-  return captureView(portraitCam, 256, 256, 'image/png');
-}
-
-let lastPortrait = null;
-game.onSnapshot = () => {
-  const photo = captureView(camera, 960, 600);
-  lastPortrait = capturePortrait();
-  return photo;
-};
-
-// ------------------------------------------------------------
 // 画面遷移
 // ------------------------------------------------------------
-function updateAvatar() {
-  // 正面・まばたきなし・視線まっすぐで撮る
-  const prev = { h: dog.heading, look: dog.lookAt, hold: dog.lookHold, exp: dog.expr, yaw: dog.lookYaw, pitch: dog.lookPitch };
-  dog.heading = 0;
-  dog.lookAt = null;
-  dog.lookYaw = 0;
-  dog.lookPitch = 0;
-  dog.blinking = 0;
-  dog.blinkT = 3;
-  dog.setExpr('happy');
-  dog.update(0.001, { x: 0, z: 0 }, null);
-  const url = capturePortrait();
-  ui.setAvatar(url);
-  lastPortrait = url;
-  dog.heading = prev.h;
-  dog.lookAt = prev.look;
-  dog.lookHold = prev.hold;
-  dog.setExpr(prev.exp);
-  dog.update(0.001, { x: 0, z: 0 }, null);
-}
-
 function startRun() {
   audio.unlock();
   game.startRun();
   updateAvatar();
   perf.grace = 2;
 }
-
-ui.on('start', () => {
-  if (!getSave().dog) { openCustom(); return; }
-  startRun();
-});
 function openCustom() {
   game.toCustom();
   ui.buildCustom(dog.params, (p, rebuild) => {
     if (rebuild) {
       dog.setParams({ ...p });
       dog.update(0.016, { x: 0, z: 0 }, null);
-    } else dog.params = { ...dog.params, name: p.name };
+    } else dog.params = { ...dog.params, name: p.name, personality: p.personality };
   });
 }
+const albumCount = () => `${Object.keys(getSave().album).filter((k) => MOMENT_MAP[k]).length}/${MOMENTS.length}`;
+
+ui.on('start', () => {
+  if (!getSave().dog) { openCustom(); return; }
+  startRun();
+});
 ui.on('custom', openCustom);
 ui.on('customOk', () => {
   const p = ui.customParams || dog.params;
@@ -235,13 +241,21 @@ ui.on('customOk', () => {
   save();
   startRun();
 });
-ui.on('zukan', () => ui.showZukan());
-ui.on('zukanClose', () => ui.hide('zukan'));
+ui.on('collection', () => ui.showCollection());
+ui.on('collectionClose', () => ui.hide('collection'));
 ui.on('again', () => startRun());
-ui.on('title', () => { audio.stopBgm(); game.toTitle(); });
+ui.on('title', () => { ui.hide('pause'); game.toTitle(); });
 ui.on('pause', () => game.pause());
 ui.on('resume', () => game.resume());
 ui.on('restart', () => { ui.hide('pause'); startRun(); });
+ui.on('end', () => game.finish());
+ui.on('shutter', () => game.action('shutter'));
+ui.on('treat', () => game.action('treat'));
+ui.on('call', () => game.action('call'));
+ui.on('laser', () => game.action('laser'));
+ui.on('find', () => game.action('find'));
+ui.on('switch', () => game.action('switch'));
+ui.on('zoom', (f) => { if (game.state === 'play') camRig.zoomBy(f); });
 ui.on('sound', () => {
   sv.settings.sound = !sv.settings.sound;
   audio.setEnabled(sv.settings.sound);
@@ -256,17 +270,16 @@ ui.on('quality', () => {
   save();
   applyQuality(sv.settings.quality === 'auto' ? (isTouchDevice() ? 1 : 2) : QUALITY.findIndex((q) => q.id === sv.settings.quality));
 });
-ui.on('share', () => game.result && shareResult(game.result, lastPortrait, ui, 'share'));
-ui.on('save', () => game.result && shareResult(game.result, lastPortrait, ui, 'save'));
+ui.on('share', () => game.result && shareResult(game.result, ui.cover, lastPortrait, albumCount(), 'share'));
+ui.on('save', () => game.result && shareResult(game.result, ui.cover, lastPortrait, albumCount(), 'save'));
 ui.on('shareClose', () => document.getElementById('share-modal').classList.add('hidden'));
 
-// PCのショートカット
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape' || e.code === 'KeyP') {
     if (game.state === 'play') game.pause();
     else if (game.state === 'paused') game.resume();
   }
-  if (e.code === 'KeyR' && game.state === 'report') startRun();
+  if (e.code === 'KeyR' && game.state === 'album') startRun();
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden) game.pause(); });
 window.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
@@ -290,9 +303,7 @@ function frame(now) {
   if (!manual) {
     game.update(dt);
     camRig.update(dt);
-    ui.update(dt);
   }
-  // 日差しの中のほこり
   for (let i = 0; i < motes.count; i++) {
     let y = motes.getY(i) + dt * 0.03;
     if (y > 2.3) y = 0.2;
@@ -311,37 +322,15 @@ setTimeout(() => loading.remove(), 600);
 
 // 検証用フック（ブラウザ自動テストから固定ステップで操作する。通常プレイには影響しない）
 window.__game = {
-  game, dog, world, camRig, renderer, input, applyQuality,
+  game, dog, world, camRig, renderer, input, applyQuality, brain: game.brain,
   get quality() { return QUALITY[qLevel].id; },
   setManual(v) { manual = v; },
-  /** seconds秒ぶん 60fps固定で進める。move={x,y}（画面基準）、act/dashは押しっぱなし */
-  sim(seconds, { move = { x: 0, y: 0 }, act = false, dash = false } = {}) {
+  sim(seconds) {
     const steps = Math.round(seconds * 60);
     for (let i = 0; i < steps; i++) {
-      input.stickVec = move;
-      if (act !== input.actDown) input._setAct(act);
-      if (dash !== input.dashDown) input._setDash(dash);
       game.update(1 / 60);
       camRig.update(1 / 60);
-      ui.update(1 / 60);
     }
   },
-  tap(kind = 'act') {
-    if (kind === 'act') { input._setAct(true); this.sim(1 / 60, { act: true }); input._setAct(false); this.sim(1 / 60); }
-    else { input._setDash(true); this.sim(1 / 60, { dash: true }); input._setDash(false); this.sim(1 / 60); }
-  },
-  /** 犬を目標の位置まで歩かせる */
-  walkTo(x, z, maxT = 6) {
-    for (let t = 0; t < maxT; t += 1 / 60) {
-      const dx = x - dog.pos.x, dz = z - dog.pos.z;
-      if (Math.hypot(dx, dz) < 0.12) break;
-      const f = camRig.forward, r = camRig.right;
-      // ワールド→画面入力（right/forwardの逆変換）
-      const mx = dx * r.x + dz * r.z;
-      const my = -(dx * f.x + dz * f.z);
-      const l = Math.hypot(mx, my) || 1;
-      this.sim(1 / 60, { move: { x: mx / l, y: my / l } });
-    }
-    this.sim(0.2);
-  },
+  startRun,
 };

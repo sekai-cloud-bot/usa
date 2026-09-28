@@ -335,6 +335,8 @@ class Toppler {
     this.outer.position.set(this.pos.x + d.x * this.r, 0, this.pos.z + d.z * this.r);
     this.inner.position.set(-d.x * this.r, 0, -d.z * this.r);
     this.outer.quaternion.identity();
+    this.startAt = this.world.time;
+    this.world.game?.onToppleStart?.(this);
     return true;
   }
 
@@ -351,6 +353,7 @@ class Toppler {
       if (k >= 1) {
         this.state = 'down';
         this.bounceT = 0;
+        this.downAt = this.world.time;
         this.world.onToppled(this);
       }
     } else if (this.state === 'down' && this.bounceT < 1) {
@@ -627,7 +630,7 @@ export class World {
     }
     // 転がるもの・置いてあるもの
     for (const m of this.movables) {
-      if (m.mode === 'held' || m.mode === 'contained' || m.mode === 'gone' || m.mode === 'table') continue;
+      if (m.mode === 'held' || m.mode === 'contained' || m.mode === 'gone' || m.mode === 'table' || m.kind === 'treat') continue;
       if (m.pos.y > 0.5) continue;
       const dx = m.pos.x - p.x, dz = m.pos.z - p.z;
       const d = Math.hypot(dx, dz);
@@ -876,7 +879,7 @@ export class World {
         const d = Math.hypot(dx, dz), min = t.r + m.r;
         if (d < min && d > 1e-5) {
           const nx = dx / d, nz = dz / d;
-          const need = m.thrown ? 0.8 : (t.kind === 'lamp' ? 1.9 : 1.3);
+          const need = m.kind === 'treat' ? 99 : m.thrown ? 0.8 : (t.kind === 'lamp' ? 1.9 : 1.3);
           if (sp > need) {
             t.topple(_v.set(m.vel.x, 0, m.vel.z), m.thrown ? 'throw' : (m.kind === 'ball' ? 'ball' : m.cause || 'chain'));
             m.vel.x *= 0.5; m.vel.z *= 0.5;
@@ -943,8 +946,42 @@ export class World {
     if (s > 0.8 && (m.kind === 'ball' || m.kind === 'paper')) audio.play('bounce', 0.8);
   }
 
+  // ---- おやつ（カメラから発射） ----
+  spawnTreat(from, to) {
+    const g = new THREE.Group();
+    const parts = [
+      { geo: new THREE.CapsuleGeometry(0.018, 0.07, 3, 6), matrix: mat(0, 0, 0, 0, 0, Math.PI / 2), color: 0xd9a05b },
+      { geo: new THREE.SphereGeometry(0.024, 6, 5), matrix: mat(0.05, 0.012, 0), color: 0xd9a05b },
+      { geo: new THREE.SphereGeometry(0.024, 6, 5), matrix: mat(0.05, -0.012, 0), color: 0xd9a05b },
+      { geo: new THREE.SphereGeometry(0.024, 6, 5), matrix: mat(-0.05, 0.012, 0), color: 0xd9a05b },
+      { geo: new THREE.SphereGeometry(0.024, 6, 5), matrix: mat(-0.05, -0.012, 0), color: 0xd9a05b },
+    ];
+    const mesh = new THREE.Mesh(mergeParts(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }));
+    mesh.castShadow = true;
+    g.add(mesh);
+    const m = new Movable(this, 'treat', g, { label: 'おやつ', r: 0.05, restY: 0.03, bounce: 0.3, fric: 5, grabbable: false });
+    m.place(from.x, from.y, from.z);
+    const T = clamp(0.45 + from.distanceTo(to) * 0.09, 0.55, 1.1);
+    m.vel.set((to.x - from.x) / T, (to.y + 0.03 - from.y) / T + 0.5 * GRAV * T, (to.z - from.z) / T);
+    m.mode = 'air';
+    m.spin = 9;
+    m.data.land = to.clone();
+    this.movables.push(m);
+    return m;
+  }
+
+  removeMovable(m) {
+    m.mode = 'gone';
+    m.mesh.visible = false;
+    if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
+  }
+
   onLand(m, impact) {
     m.spin = 0;
+    if (m.kind === 'treat') {
+      if (!m.data.landed) { m.data.landed = true; audio.play('bounce', 1.6); this.game?.onTreatLanded?.(m); }
+      return;
+    }
     if (m.kind === 'mug' && m.mode !== 'gone') {
       m.mode = 'gone';
       m.mesh.visible = false;
@@ -971,6 +1008,7 @@ export class World {
   }
 
   onRest(m) {
+    if (m.kind === 'treat') return;
     if (m.kind === 'slipper') {
       const inBed = this.movables.filter((s) => s.kind === 'slipper' && s.mode === 'rest' && this.isInBed(s.pos.x, s.pos.z, 0.05));
       if (inBed.length >= 2) this.game?.incident('slipperMove', m.pos.clone());
@@ -983,7 +1021,7 @@ export class World {
   }
 
   treasures() {
-    return this.movables.filter((m) => m.kind !== 'teddy' && m.kind !== 'paper' && m.mode !== 'held' && m.mode !== 'gone' && this.isInBed(m.pos.x, m.pos.z, 0.05));
+    return this.movables.filter((m) => m.kind !== 'teddy' && m.kind !== 'paper' && m.kind !== 'treat' && m.mode !== 'held' && m.mode !== 'gone' && this.isInBed(m.pos.x, m.pos.z, 0.05));
   }
 
   /** 犬が考えごとをする対象（未体験のいたずら） */

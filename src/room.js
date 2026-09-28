@@ -8,6 +8,39 @@ export const SUN_DIR = new THREE.Vector3(6, 4.3, -1.6).normalize(); // 床→太
 export const BED = { x: 2.95, z: -2.2, r: 0.62 };
 export const TABLE = { x: -1.7, z: -0.75, r: 0.64, top: 0.45 };
 export const DOOR = { x: 1.1, w: 0.95, h: 2.05 };
+// みまもりカメラの設置場所（yaw=0 で奥の壁方向、正で右）
+export const CAM_SPOTS = [
+  { name: 'リビング', pos: new THREE.Vector3(0.55, 1.6, 3.32), yaw0: 0.12, pitch0: -0.42, yawMin: -1.15, yawMax: 1.2, stand: true },
+  { name: 'ソファの上', pos: new THREE.Vector3(-2.42, 1.66, -3.26), yaw0: 2.5, pitch0: -0.38, yawMin: 1.3, yawMax: 4.0, stand: false },
+];
+
+/** 小さなドーム型のペットカメラ */
+function petcamDevice(stand) {
+  const g = new THREE.Group();
+  const white = std(0xfbf8f2, 0.4);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.05, 16), white);
+  base.position.y = -0.09;
+  g.add(base);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12), white);
+  g.add(dome);
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.035, 16), std(0x1c1a22, 0.15));
+  lens.position.set(0, 0, 0.084);
+  g.add(lens);
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 6), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
+  led.position.set(0.04, 0.04, 0.072);
+  g.add(led);
+  if (stand) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.5, 8), std(0xd9a066, 0.5));
+    pole.position.y = -0.84;
+    g.add(pole);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.03, 16), std(0xd9a066, 0.5));
+    foot.position.y = -1.585;
+    g.add(foot);
+  }
+  g.userData.led = led;
+  g.userData.dome = dome;
+  return g;
+}
 
 function std(color, rough = 0.8, extra = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0, ...extra });
@@ -597,9 +630,19 @@ export function buildRoom(scene, renderer) {
   }));
   room.add(motePts);
 
-  batchStatic(room, new Set([doorPivot, owner, shafts, hourHand, minHand, tp, motePts]));
+  // みまもりカメラ本体
+  const devices = CAM_SPOTS.map((c) => {
+    const d = petcamDevice(c.stand);
+    d.position.copy(c.pos);
+    d.rotation.y = Math.PI - c.yaw0;
+    room.add(d);
+    return d;
+  });
+
+  batchStatic(room, new Set([doorPivot, owner, shafts, hourHand, minHand, tp, motePts, ...devices]));
 
   return {
+    devices,
     group: room, colliders, doorPivot, owner, clockHands: { hour: hourHand, min: minHand }, shafts, motes: motePts,
     tablePlant: tp,
   };

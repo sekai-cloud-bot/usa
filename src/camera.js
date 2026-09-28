@@ -1,27 +1,41 @@
 import * as THREE from 'three';
-import { clamp, damp } from './util.js';
-import { ROOM, BED } from './room.js';
+import { clamp, damp, angleDiff } from './util.js';
+import { BED, CAM_SPOTS } from './room.js';
 
-const _t = new THREE.Vector3();
 const _p = new THREE.Vector3();
+const _d = new THREE.Vector3();
+
+// ペットカメラの設置場所（yaw=0 で奥の壁方向、正で右）
+export const PETCAMS = CAM_SPOTS;
+const PITCH_MIN = -1.25, PITCH_MAX = -0.05;
+const ZOOM_MIN = 1, ZOOM_MAX = 5;
 
 export class CamRig {
   constructor(camera) {
     this.camera = camera;
     this.mode = 'overview';
-    this.target = new THREE.Vector3(0, 0, 0);
     this.look = new THREE.Vector3();
     this.pos = new THREE.Vector3(0, 6, 8);
-    this.forward = new THREE.Vector3(0, 0, -1);
-    this.right = new THREE.Vector3(1, 0, 0);
-    this.shake = 0;
     this.t = 0;
     this.aspect = 1.6;
-    this.zoom = 1;
     this.dog = null;
+    // ペットカメラ
+    this.camIndex = 0;
+    this.yaw = PETCAMS[0].yaw0;
+    this.pitch = PETCAMS[0].pitch0;
+    this.zoom = 1.3;
+    this.tYaw = this.yaw;
+    this.tPitch = this.pitch;
+    this.tZoom = this.zoom;
+    this.angVel = 0;
+    this.prevDir = new THREE.Vector3(0, 0, -1);
+    this.dir = new THREE.Vector3(0, 0, -1);
+    this.switchT = 0;
   }
 
   get portrait() { return this.aspect < 0.95; }
+  get petcam() { return PETCAMS[this.camIndex]; }
+  get devicePos() { return PETCAMS[this.camIndex].pos; }
 
   resize(w, h) {
     this.aspect = w / h;
@@ -30,15 +44,17 @@ export class CamRig {
     this.applyLens();
   }
 
+  /** ズーム1倍での縦の画角 */
+  baseFov() { return this.portrait ? 78 : 58; }
+
   applyLens() {
     const c = this.camera;
-    if (this.mode === 'follow') c.fov = this.portrait ? 52 : 40;
+    if (this.mode === 'petcam') c.fov = this.baseFov() / this.zoom;
     else if (this.mode === 'custom') c.fov = this.portrait ? 44 : 34;
-    else if (this.mode === 'cinematic') c.fov = this.portrait ? 50 : 36;
     else c.fov = this.portrait ? 55 : 42;
     if (this.mode === 'custom') {
       const off = this.portrait ? 0.23 : 0.2;
-      c.setViewOffset(this.w, this.h, this.portrait ? 0 : -this.w * 0.0, this.h * off, this.w, this.h);
+      c.setViewOffset(this.w, this.h, 0, this.h * off, this.w, this.h);
     } else c.clearViewOffset();
     c.updateProjectionMatrix();
   }
@@ -46,45 +62,84 @@ export class CamRig {
   setMode(mode, dog, snap = false) {
     this.mode = mode;
     this.dog = dog || this.dog;
-    this.modeT = 0;
     this.applyLens();
     if (snap) {
-      this.compute(0);
+      this.compute();
       this.pos.copy(this.wantPos);
       this.look.copy(this.wantLook);
     }
   }
 
-  followOffset() {
-    const el = this.portrait ? 1.0 : 0.9;
-    const yaw = -0.2;
-    const dist = (this.portrait ? 6.6 : 5.6) * this.zoom;
-    return _p.set(Math.sin(yaw) * Math.cos(el), Math.sin(el), Math.cos(yaw) * Math.cos(el)).multiplyScalar(dist);
+  // ---------- ペットカメラ操作 ----------
+  resetPetcam(index = 0) {
+    this.camIndex = index;
+    const c = PETCAMS[index];
+    this.yaw = this.tYaw = c.yaw0;
+    this.pitch = this.tPitch = c.pitch0;
+    this.zoom = this.tZoom = 1.3;
+    this.applyLens();
+  }
+  /** 画面上のドラッグ量（px）で向きを変える。景色をつかんで動かす感覚 */
+  panByPixels(dx, dy) {
+    const vfov = THREE.MathUtils.degToRad(this.camera.fov);
+    const k = vfov / Math.max(1, this.h);
+    this.tYaw = clamp(this.tYaw - dx * k, this.petcam.yawMin, this.petcam.yawMax);
+    this.tPitch = clamp(this.tPitch + dy * k, PITCH_MIN, PITCH_MAX);
+  }
+  /** キーボード：-1..1 の入力 × 秒 */
+  panBy(ix, iy, dt) {
+    const vfov = THREE.MathUtils.degToRad(this.camera.fov);
+    this.tYaw = clamp(this.tYaw + ix * vfov * 0.9 * dt, this.petcam.yawMin, this.petcam.yawMax);
+    this.tPitch = clamp(this.tPitch - iy * vfov * 0.9 * dt, PITCH_MIN, PITCH_MAX);
+  }
+  zoomBy(f) { this.tZoom = clamp(this.tZoom * f, ZOOM_MIN, ZOOM_MAX); }
+  setZoom(z) { this.tZoom = clamp(z, ZOOM_MIN, ZOOM_MAX); }
+  get zoomRange() { return [ZOOM_MIN, ZOOM_MAX]; }
+
+  /** 指定位置が画面中央に来る向き */
+  aimAt(target, zoom = null) {
+    const p = this.devicePos;
+    _d.subVectors(target, p);
+    const yaw = Math.atan2(_d.x, -_d.z);
+    const pitch = Math.atan2(_d.y, Math.hypot(_d.x, _d.z));
+    // yaw の範囲はカメラごとに連続になるように
+    let y = yaw;
+    const mid = (this.petcam.yawMin + this.petcam.yawMax) / 2;
+    y = mid + angleDiff(mid, y);
+    this.tYaw = clamp(y, this.petcam.yawMin, this.petcam.yawMax);
+    this.tPitch = clamp(pitch, PITCH_MIN, PITCH_MAX);
+    if (zoom) {
+      const dist = _d.length();
+      this.tZoom = clamp(zoom * dist / 4, ZOOM_MIN, ZOOM_MAX);
+    }
   }
 
-  compute(dt) {
-    const dog = this.dog;
+  switchCam() {
+    const next = (this.camIndex + 1) % PETCAMS.length;
+    const target = this.dog ? this.dog.pos.clone().setY(0.35) : null;
+    this.camIndex = next;
+    this.yaw = this.tYaw = PETCAMS[next].yaw0;
+    this.pitch = this.tPitch = PETCAMS[next].pitch0;
+    if (target) {
+      this.aimAt(target);
+      this.yaw = this.tYaw;
+      this.pitch = this.tPitch;
+    }
+    this.switchT = 0.35;
+  }
+
+  dirFrom(yaw, pitch, out) {
+    return out.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+  }
+
+  compute() {
     this.wantPos = this.wantPos || new THREE.Vector3();
     this.wantLook = this.wantLook || new THREE.Vector3();
+    const dog = this.dog;
     switch (this.mode) {
-      case 'follow': {
-        _t.set(dog.pos.x + dog.vel.x * 0.28, 0, dog.pos.z + dog.vel.z * 0.22);
-        const mx = this.portrait ? 3.4 : 2.7;
-        _t.x = clamp(_t.x, -mx, mx);
-        _t.z = clamp(_t.z, -2.1, 1.7);
-        if (dt === 0) this.target.copy(_t);
-        else {
-          this.target.x = damp(this.target.x, _t.x, 4.5, dt);
-          this.target.z = damp(this.target.z, _t.z, 4.5, dt);
-        }
-        this.wantPos.copy(this.target).add(this.followOffset());
-        this.wantLook.copy(this.target).setY(0.25);
-        break;
-      }
       case 'overview': {
         const s = Math.sin(this.t * 0.15) * 0.4;
         if (this.portrait) {
-          // ベッドで眠る子を画面の上寄りに（下はタイトルのカード）
           this.wantPos.set(BED.x - 0.7 + s * 0.5, 2.9, BED.z + 3.6);
           this.wantLook.set(BED.x - 0.35, 0.0, BED.z + 1.35);
         } else {
@@ -99,14 +154,10 @@ export class CamRig {
         this.wantLook.set(d.x, 0.3, d.z);
         break;
       }
-      case 'cinematic': {
-        const d = dog.pos;
-        const a = this.cineAngle || 0;
-        const dist = this.cineDist || (this.portrait ? 2.7 : 2.0);
-        const px = clamp(d.x + Math.sin(a) * dist, ROOM.minX + 0.3, ROOM.maxX - 0.3);
-        const pz = Math.max(ROOM.minZ + 0.3, d.z + Math.cos(a) * dist);
-        this.wantPos.set(px, 1.05, pz);
-        this.wantLook.set(d.x, 0.32, d.z);
+      case 'petcam': {
+        this.wantPos.copy(this.devicePos);
+        this.dirFrom(this.yaw, this.pitch, _p);
+        this.wantLook.copy(this.devicePos).add(_p);
         break;
       }
     }
@@ -114,25 +165,46 @@ export class CamRig {
 
   update(dt) {
     this.t += dt;
-    if (this.modeT !== undefined) this.modeT += dt;
-    this.compute(dt);
-    const k = this.mode === 'follow' ? 12 : this.mode === 'cinematic' ? 3 : 4;
+    const c = this.camera;
+    if (this.mode === 'petcam') {
+      // モーター付きカメラ：少しだけ遅れて追従
+      this.yaw = damp(this.yaw, this.tYaw, 14, dt);
+      this.pitch = damp(this.pitch, this.tPitch, 14, dt);
+      const pz = this.zoom;
+      this.zoom = damp(this.zoom, this.tZoom, 10, dt);
+      if (Math.abs(pz - this.zoom) > 1e-4) this.applyLens();
+      this.compute();
+      this.pos.copy(this.wantPos);
+      this.look.copy(this.wantLook);
+      c.position.copy(this.pos);
+      c.lookAt(this.look);
+      // 角速度（ブレ判定用）
+      this.dirFrom(this.yaw, this.pitch, this.dir);
+      const ang = this.prevDir.angleTo(this.dir) / Math.max(dt, 1e-4);
+      this.angVel = damp(this.angVel, ang, 12, dt);
+      this.prevDir.copy(this.dir);
+      if (this.switchT > 0) this.switchT -= dt;
+      return;
+    }
+    this.compute();
+    const k = 4;
     this.pos.x = damp(this.pos.x, this.wantPos.x, k, dt);
     this.pos.y = damp(this.pos.y, this.wantPos.y, k, dt);
     this.pos.z = damp(this.pos.z, this.wantPos.z, k, dt);
     this.look.x = damp(this.look.x, this.wantLook.x, k, dt);
     this.look.y = damp(this.look.y, this.wantLook.y, k, dt);
     this.look.z = damp(this.look.z, this.wantLook.z, k, dt);
-    const c = this.camera;
     c.position.copy(this.pos);
-    if (this.shake > 0.01) {
-      const s = this.shake * 0.06;
-      c.position.x += (Math.random() - 0.5) * s;
-      c.position.y += (Math.random() - 0.5) * s;
-    }
     c.lookAt(this.look);
-    // 入力の向き（カメラ基準）
-    this.forward.set(this.look.x - this.pos.x, 0, this.look.z - this.pos.z).normalize();
-    this.right.set(-this.forward.z, 0, this.forward.x);
+  }
+
+  /** 画面中央の先にある床の点（なければ null） */
+  floorPointAtCenter(out = new THREE.Vector3()) {
+    const d = this.dirFrom(this.yaw, this.pitch, _d);
+    if (d.y >= -0.02) return null;
+    const t = -this.devicePos.y / d.y;
+    out.copy(this.devicePos).addScaledVector(d, t);
+    out.y = 0;
+    return out;
   }
 }
