@@ -116,7 +116,7 @@ let mode = 'loading';   // loading | title | custom | play | result
 let paused = false;
 let t = 0;
 const focus = new THREE.Vector3();
-let titleHour = 17.25;
+let titleHour = 17.45;
 
 function step(dt) {
   t += dt;
@@ -280,7 +280,7 @@ $('btn-custom-ok').addEventListener('click', () => {
   dogParams.name = ($('in-name').value || '').trim() || 'うさ';
   data.dog = dogParams;
   save();
-  titleHour = 17.25;
+  titleHour = 17.45;
   player.place(BED.x, 0.05, BED.z, -2.2);
   player.dog.setPose('lie');
   player.dog.setExpr('sleep');
