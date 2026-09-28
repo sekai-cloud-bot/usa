@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#f3dcc0">
+<meta name="description" content="飼い主が留守のあいだ、うちの子がちょっとだけいたずらするゲーム。">
+<title>うちの子、おるすばん中。</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="c" aria-label="ゲーム画面"></canvas>
+
+  <div id="loading" class="loading">
+    <div class="loading-paw"></div>
+    <div>おへやを準備中…</div>
+  </div>
+
+  <!-- プレイ中HUD -->
+  <div id="hud" class="hud hidden">
+    <div class="hud-tl panel">
+      <img id="avatar" class="avatar" alt="">
+      <div class="hud-tl-text">
+        <div id="hud-name" class="hud-name">うさ</div>
+        <div class="hud-status"><span id="hud-dot" class="dot"></span><span id="hud-status">おるすばん中</span></div>
+      </div>
+    </div>
+
+    <div class="hud-tc">
+      <div id="odai" class="odai"><i class="ico-paw"></i><span id="odai-text"></span><i class="ico-paw"></i></div>
+      <div class="clock panel"><span id="clock-text">13:00</span><div class="clock-bar"><div id="clock-fill"></div></div><i class="ico-house"></i></div>
+    </div>
+
+    <div class="hud-tr panel">
+      <i class="ico-bag"></i>
+      <div>
+        <div class="hud-yen-label">本日のいたずら</div>
+        <div id="yen" class="hud-yen">¥0</div>
+      </div>
+    </div>
+
+    <div id="log" class="log"></div>
+    <div id="chain" class="chain"></div>
+    <div id="banner" class="banner"></div>
+    <div id="hint" class="hint"></div>
+
+    <div id="stick" class="stick"><div id="stick-knob" class="stick-knob"></div></div>
+
+    <div class="btns">
+      <button id="btn-dash" class="btn" aria-label="はしる">
+        <i class="ico-dash"></i><span>はしる</span>
+      </button>
+      <button id="btn-act" class="btn big" aria-label="くわえる">
+        <i id="act-ico" class="ico-bone"></i><span id="act-label">くわえる</span>
+      </button>
+    </div>
+
+    <button id="btn-pause" class="round-btn pause-btn" aria-label="一時停止"><i class="ico-pause"></i></button>
+  </div>
+
+  <div id="popups" class="popups"></div>
+
+  <!-- タイトル -->
+  <div id="screen-title" class="screen title-screen hidden">
+    <div class="title-card">
+      <h1 class="logo"><span class="logo-a">うちの子、</span><span class="logo-b">おるすばん中。</span></h1>
+      <p class="tagline">ご主人がいないあいだに、ちょっとだけ。</p>
+      <button id="btn-start" class="cta">おるすばんスタート</button>
+      <div class="title-row">
+        <button id="btn-custom" class="sub">うちの子をえらぶ</button>
+        <button id="btn-zukan" class="sub">じけん図鑑 <b id="zukan-count"></b></button>
+      </div>
+      <div id="title-best" class="title-best"></div>
+    </div>
+  </div>
+
+  <!-- うちの子エディタ -->
+  <div id="screen-custom" class="screen custom-screen hidden">
+    <div class="custom-head">
+      <div class="custom-title">うちの子をえらぶ</div>
+      <div class="custom-sub">いちばん「うちの子」に近い子にしてね</div>
+    </div>
+    <div class="custom-sheet">
+      <label class="field">
+        <span>なまえ</span>
+        <input id="in-name" type="text" maxlength="10" placeholder="うさ" autocomplete="off">
+      </label>
+      <div class="field"><span>犬種</span><div id="opt-breed" class="chips"></div></div>
+      <div class="field"><span>毛の色</span><div id="opt-color" class="swatches"></div></div>
+      <div class="field"><span>耳</span><div id="opt-ear" class="chips"></div></div>
+      <div class="field"><span>しっぽ</span><div id="opt-tail" class="chips"></div></div>
+      <div class="field"><span>もこもこ</span><input id="in-fluff" type="range" min="0" max="100" step="1"></div>
+      <div class="field"><span>からだ</span><div id="opt-body" class="chips"></div></div>
+      <button id="btn-custom-ok" class="cta">この子でおるすばん！</button>
+    </div>
+  </div>
+
+  <!-- 報告書 -->
+  <div id="screen-report" class="screen report-screen hidden">
+    <div class="report">
+      <div class="report-title"><i class="ico-paw"></i><span id="rp-title">うさのお留守番報告書</span><i class="ico-paw"></i></div>
+      <div class="report-photo-wrap">
+        <img id="rp-photo" class="report-photo" alt="">
+        <div id="rp-verdict" class="report-verdict"></div>
+      </div>
+      <div class="report-body">
+        <div class="report-total">
+          <div class="report-total-label">本日の被害総額</div>
+          <div id="rp-total" class="report-total-yen">¥0</div>
+          <div id="rp-best" class="report-best"></div>
+        </div>
+        <div class="report-quote">
+          <div id="rp-quote" class="quote"></div>
+        </div>
+      </div>
+      <div id="rp-items" class="report-items"></div>
+      <div id="rp-incidents" class="report-incidents"></div>
+      <div id="rp-next" class="report-next"></div>
+      <div class="report-meter"><span>反省：<b id="rp-hansei">0%</b></span><span>かわいさ：<b id="rp-kawaii" class="pink">100%</b></span></div>
+      <div class="report-actions">
+        <button id="btn-again" class="cta">もう一回おるすばん</button>
+        <div class="title-row">
+          <button id="btn-share" class="sub">画像でシェア</button>
+          <button id="btn-save" class="sub">画像を保存</button>
+        </div>
+        <div class="title-row">
+          <button id="btn-rp-custom" class="sub ghost">うちの子をかえる</button>
+          <button id="btn-rp-title" class="sub ghost">タイトルへ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 図鑑 -->
+  <div id="screen-zukan" class="screen zukan-screen hidden">
+    <div class="zukan">
+      <div class="zukan-title">じけん図鑑 <b id="zk-count"></b></div>
+      <div id="zk-list" class="zukan-list"></div>
+      <button id="btn-zukan-close" class="cta">とじる</button>
+    </div>
+  </div>
+
+  <!-- 一時停止 -->
+  <div id="screen-pause" class="screen pause-screen hidden">
+    <div class="pause-card">
+      <div class="pause-title">ひとやすみ</div>
+      <button id="btn-resume" class="cta">つづける</button>
+      <button id="btn-restart" class="sub">さいしょから</button>
+      <button id="btn-sound" class="sub">おと：<b id="sound-state">ON</b></button>
+      <button id="btn-quality" class="sub">画質：<b id="quality-state">自動</b></button>
+      <button id="btn-quit" class="sub ghost">タイトルへ</button>
+      <div class="pause-help">
+        <div><b>PC</b> 移動 WASD/矢印 ・ くわえる/はなす Space（長押しでぶんぶん） ・ はしる Shift</div>
+        <div><b>スマホ</b> 左側をなぞって移動 ・ 右下のボタン</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 共有プレビュー -->
+  <div id="share-modal" class="screen share-modal hidden">
+    <div class="share-card">
+      <img id="share-img" alt="お留守番報告書">
+      <div class="share-note" id="share-note">画像を長押しで保存できます</div>
+      <div class="title-row">
+        <a id="share-dl" class="sub" download="orusuban.png">ダウンロード</a>
+        <button id="btn-share-close" class="sub ghost">とじる</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
