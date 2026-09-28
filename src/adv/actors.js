@@ -48,17 +48,22 @@ export function buildPerson(o = {}) {
   const hipY = 0.8;
   body.position.y = hipY;
   const legCol = o.skirt ? (o.tights ?? 0x5b4a52) : bottom;
-  // 脚
-  const legs = [];
+  // 脚（ひざで曲がる。ベンチに座る・しゃがむ時に足が地面につく）
+  const legs = [], knees = [];
   for (const side of [-1, 1]) {
     const pv = new THREE.Group();
     pv.position.set(side * 0.1, 0.02, 0);
+    part([{ geo: cap(0.068, 0.24), matrix: M4(0, -0.19, 0), color: legCol }], pv);
+    const kn = new THREE.Group();
+    kn.position.y = -0.37;
     part([
-      { geo: cap(0.068, 0.56), matrix: M4(0, -0.36, 0), color: legCol },
-      { geo: rb(0.13, 0.085, 0.25, 0.04), matrix: M4(0, -0.74, 0.045), color: shoes },
-    ], pv);
+      { geo: cap(0.064, 0.26), matrix: M4(0, -0.17, 0), color: legCol },
+      { geo: rb(0.13, 0.085, 0.25, 0.04), matrix: M4(0, -0.37, 0.045), color: shoes },
+    ], kn);
+    pv.add(kn);
     body.add(pv);
     legs.push(pv);
+    knees.push(kn);
   }
   // 胴（なめらかな回転体をすこし平たく）
   const torso = new THREE.Group();
@@ -141,7 +146,7 @@ export function buildPerson(o = {}) {
   part(hp, head);
   torso.add(head);
   root.scale.setScalar(s * (o.scale || 1));
-  return { root, body, torso, head, arms, legs, hipY };
+  return { root, body, torso, head, arms, legs, knees, hipY };
 }
 
 export class Person {
@@ -169,6 +174,17 @@ export class Person {
     this.target = null;
   }
   place(x, z, h = this.heading, y = 0) { this.pos.set(x, y, z); this.heading = h; }
+  /**
+   * ベンチに座る。x, z, ry, y は bench() に渡したのと同じ値（座面は +z 向き、背もたれは -z 側）。
+   * 腰を座面の中ほど・背もたれ寄りに置き、ベンチの正面を向く
+   */
+  sitOn(x, z, ry, y = 0) {
+    const f = 0.02;
+    this.place(x + Math.sin(ry) * f, z + Math.cos(ry) * f, ry, y);
+    this.pose = 'sit';
+    this.path = null;
+    this.target = null;
+  }
   walkTo(x, z, cb) { this.target = new THREE.Vector3(x, 0, z); this.path = null; this.onArrive = cb || null; }
   follow(points, loop = true) { this.path = points; this.pathI = 0; this.loop = loop; this.target = null; }
 
@@ -210,22 +226,28 @@ export class Person {
     this.phase += dt * (this.walking ? 7.5 * (this.speed / 1.15) : 0);
     const w = this.walking ? 1 : 0;
     this.wk = damp(this.wk || 0, w, 8, dt);
-    const sw = Math.sin(this.phase) * 0.55 * this.wk;
+    const sn = Math.sin(this.phase);
+    const sw = sn * 0.55 * this.wk;
     r.legs[0].rotation.x = sw;
     r.legs[1].rotation.x = -sw;
-    const bob = Math.abs(Math.sin(this.phase)) * 0.035 * this.wk;
+    // 歩くとき、うしろへ振った足のひざを軽く曲げる
+    r.knees[0].rotation.x = Math.max(0, sn) * 0.7 * this.wk;
+    r.knees[1].rotation.x = Math.max(0, -sn) * 0.7 * this.wk;
+    const bob = Math.abs(sn) * 0.035 * this.wk;
     const breathe = Math.sin(this.t * 2) * 0.008;
-    // しゃがむ（片ひざ）
+    // しゃがむ（片ひざ）／座る（ももは水平、すねはまっすぐ下へ）
     const c = k.crouch, st = k.sit;
-    r.body.position.y = r.hipY + bob + breathe - c * 0.42 - st * 0.34;
-    r.legs[0].rotation.x += -c * 1.55 - st * 1.5;
-    r.legs[1].rotation.x += c * 0.3 - st * 1.5;
+    r.body.position.y = r.hipY + bob + breathe - c * 0.42 - st * 0.28;
+    r.legs[0].rotation.x += -c * 1.55 - st * 1.35;
+    r.legs[1].rotation.x += c * 0.3 - st * 1.35;
+    r.knees[0].rotation.x += c * 1.55 + st * 1.35;
+    r.knees[1].rotation.x += c * 1.2 + st * 1.35;
     r.torso.rotation.x = c * 0.35 + k.hug * 0.1;
-    // 腕
-    const aw = Math.sin(this.phase) * 0.45 * this.wk;
+    // 腕（座っている時は手をひざの上に）
+    const aw = sn * 0.45 * this.wk;
     let aL = -aw, aR = aw, zL = 0.08, zR = -0.08;
-    aL += -k.hug * 1.2 - k.give * 0.2 - k.cheer * 2.6;
-    aR += -k.hug * 1.2 - k.give * 1.3 - k.wave * 2.7 - k.flag * 1.6 - k.cheer * 2.6;
+    aL += -k.hug * 1.2 - k.give * 0.2 - k.cheer * 2.6 - st * 0.45;
+    aR += -k.hug * 1.2 - k.give * 1.3 - k.wave * 2.7 - k.flag * 1.6 - k.cheer * 2.6 - st * 0.45;
     zL += -k.hug * 0.55 - k.cheer * 0.35;
     zR += k.hug * 0.55 + k.cheer * 0.35 - k.wave * (0.3 + Math.sin(this.t * 9) * 0.25);
     r.arms[0].rotation.set(aL, 0, zL);

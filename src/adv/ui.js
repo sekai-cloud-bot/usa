@@ -185,7 +185,7 @@ export class UI {
     el.appendChild(s);
     this.bubbleRoot.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
-    const b = { el, getPos, until: performance.now() + dur * 1000 };
+    const b = { el, getPos, until: performance.now() + dur * 1000, w: 0, h: 0 };
     this.bubbles.push(b);
     this.updateBubbles();
   }
@@ -193,6 +193,13 @@ export class UI {
   updateBubbles() {
     const now = performance.now();
     const W = innerWidth, H = innerHeight;
+    if (!this.bubbles.length) return;
+    // 演出中は黒帯（高さ 9vh）の内側に収める（スマホの横向きで、吹き出しの上が切れていた）。
+    // 黒帯は伸びるアニメーションの途中でも、伸びきった高さで考える
+    const cine = document.body.classList.contains('cine');
+    const band = cine ? Math.max(this.letterTop().getBoundingClientRect().bottom, H * 0.1) : 0;
+    const top = band + 8;
+    const bottom = H - band - 8;
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i];
       if (now > b.until) {
@@ -202,13 +209,17 @@ export class UI {
         this.bubbles.splice(i, 1);
         continue;
       }
+      if (!b.w) { b.w = b.el.offsetWidth; b.h = b.el.offsetHeight; }
       _p.copy(b.getPos());
       _p.project(this.camera);
       const behind = _p.z > 1;
-      const x = Math.min(W - 90, Math.max(90, (_p.x * 0.5 + 0.5) * W));
-      const y = Math.min(H - 60, Math.max(70, (-_p.y * 0.5 + 0.5) * H));
+      // 位置は吹き出しの下のしっぽの先。本体は translate で上に乗る（margin-top: -14px 分も含める）
+      const hw = Math.min(b.w / 2 + 8, W / 2);
+      const x = Math.min(W - hw, Math.max(hw, (_p.x * 0.5 + 0.5) * W));
+      const y = Math.min(bottom, Math.max(top + b.h + 14, (-_p.y * 0.5 + 0.5) * H));
       b.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
       b.el.style.opacity = behind ? '0' : '';
     }
   }
+  letterTop() { return this._lt || (this._lt = document.querySelector('.letterbox.top')); }
 }

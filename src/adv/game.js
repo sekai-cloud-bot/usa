@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Person, Cat, Crow, Pigeons, Ducks, Traffic, Train, makeItem, makeWear } from './actors.js';
-import { PointFX, ScentTrail } from './fx.js';
+import { PointFX, ScentTrail, HintMarker } from './fx.js';
 import { Z, DIG, SCENT, ROAD, TRACK } from './town.js';
 import { Dog } from '../dog.js';
 import { breedParams } from '../dogModel.js';
@@ -57,6 +57,9 @@ export class Game {
     this.fx = new PointFX(scene, 600, { additive: true, gain: 1.6 });
     this.dust = new PointFX(scene, 300, { additive: false, gain: 1 });
     this.trail = new ScentTrail(scene, SCENT, (x, z) => this.heightAt(x, z));
+    // チュートリアルの目じるし：リビングの窓のすき間／庭の柵の下のやわらかい土
+    this.markWindow = new HintMarker(scene, 'nose', V(ROOM.maxX - 0.45, 0, 0.3), { ring: 0.42, height: 0.72 });
+    this.markDig = new HintMarker(scene, 'dig', V(DIG.x, 0.05, DIG.z - 0.45), { ring: 0.62, height: 0.85 });
     this.co = [];
     this.people = [];
     this.buildActors();
@@ -95,9 +98,10 @@ export class Game {
     shopper({ top: 0xb58ae0, bottom: 0x4a5468, hairStyle: 'short', hair: 0x6a4330, bag: 0x3e6ea8 }, [V(-20, 0, 7.4), V(36, 0, 7.4), V(36, 0, 9.6), V(-20, 0, 9.6)], 1.0);
     // 公園
     this.kid = P({ name: '男の子', kid: true, top: 0xf6d35a, bottom: 0x3e6ea8, hat: 'yellow' }, 37.2, -62.8, -0.6);
-    this.oldman = P({ name: 'おじいさん', hairStyle: 'bald', hair: 0xd8d2cc, top: 0x7a8a6a, bottom: 0x5b5b5b, glasses: true, hat: 'straw' }, 61.1, -68.05, -0.35 + Math.PI);
-    this.oldman.pose = 'sit';
-    this.oldman.pos.y = 0.0;
+    // ベンチに座る人は、ベンチと同じ位置・向きから座る場所を決める
+    const sitOn = (p, b) => p.sitOn(b.x, b.z, b.ry, b.y);
+    this.oldman = P({ name: 'おじいさん', hairStyle: 'bald', hair: 0xd8d2cc, top: 0x7a8a6a, bottom: 0x5b5b5b, glasses: true, hat: 'straw' }, 0, 0);
+    sitOn(this.oldman, A.benches.park[1]);
     const jog = P({ top: 0xe8604c, bottom: 0x3b3f45, hairStyle: 'short', hat: 'cap', hatColor: 0x3b3f45 }, 52, -70.5);
     const loop = [];
     for (let i = 0; i < 16; i++) { const a = -(i / 16) * Math.PI * 2; loop.push(V(52 + Math.cos(a) * 12.5, 0, -80 + Math.sin(a) * 9.5)); }
@@ -108,8 +112,8 @@ export class Game {
     // 駅前
     P({ top: 0x3b4a5e, bottom: 0x3b3f45, hairStyle: 'short', bag: 0x5b4033 }, 110.2, -58.2, Math.PI, 0.15);
     P({ top: 0xf2c6a0, bottom: 0x6f7fa8, hairStyle: 'long', hair: 0x6a4330, skirt: true }, 114.4, -58.6, -2.4, 0.15);
-    const wait = P({ top: 0x9fcfe8, bottom: 0x4a5468, hairStyle: 'short', hair: 0x3b2a22, glasses: true }, 104, -62.5, 0, 0.15);
-    wait.pose = 'sit';
+    const wait = P({ top: 0x9fcfe8, bottom: 0x4a5468, hairStyle: 'short', hair: 0x3b2a22, glasses: true }, 0, 0);
+    sitOn(wait, A.benches.plaza[0]);
     // 飼い主（最後に改札から）
     this.owner = P({ name: '', coat: true, top: 0xd9a676, inner: 0xf6efe2, bottom: 0x3f4a5e, bag: 0xf2c14e, hairStyle: 'long', hair: 0x3b2a22, scarf: 0xc9574a, shoes: 0x6b4a3e }, A.gateInside.x + 3, A.gateInside.z, -Math.PI / 2, 0.15);
     this.owner.root.visible = false;
@@ -496,6 +500,7 @@ export class Game {
     if (this.state === 'play' && (this.area === 'park' || !this.flags.dug) && Math.random() < dt * 0.25) audio.play('chirp', 0.7);
     this.updateTrain(dt);
     this.updateItems(dt);
+    this.updateHints(dt);
     this.fx.update(dt);
     this.dust.update(dt);
     this.trail.update(dt, this.sniffK, dp);
@@ -824,15 +829,24 @@ export class Game {
 
   catFlee() {
     const c = this.cat;
+    // 逃げたばかりの間は、もう一度は逃げない（着いた瞬間に鳴きなおして音が重なっていた）
+    if (this.t < (this.catCalmT || 0)) return;
+    this.catCalmT = this.t + 8;
     c.state = 'run';
     c.sleep = 0;
     audio.play('meow', 1.3);
     this.sayAt(c.pos, 'フーッ！', 1.2);
-    c.target = V(14.2, c.pos.y, 5.6);
+    // 塀の上で、犬から遠いほうの端へ
+    const dx = this.player.pos.x;
+    const tx = Math.abs(dx - 14.2) > Math.abs(dx - 31.4) ? 14.2 : 31.4;
+    c.target = V(tx, c.pos.y, 5.6);
+    const id = (this.catRunId || 0) + 1;
+    this.catRunId = id;
     c.onArrive = () => {
       c.state = 'loaf';
       this.run(function* () {
         yield 14;
+        if (id !== this.catRunId) return;
         c.state = 'walk';
         c.target = this.catHome.clone();
         c.onArrive = () => { c.state = 'loaf'; c.sleep = 1; };
@@ -980,6 +994,38 @@ export class Game {
     }
     // 落ちているボールはゆらゆら
     for (const it of this.items) if (it.ground && it.id === 'cap') it.mesh.rotation.y += dt * 1.2;
+  }
+
+  /** 窓と穴ほりの目じるし（チュートリアル）。やることが終わったら消える */
+  updateHints(dt) {
+    const p = this.player, F = this.flags;
+    const active = this.state === 'play' && !p.locked;
+    this.markWindow.show(active && !F.windowOpen);
+    this.markDig.show(active && F.escaped && !F.dug);
+    this.markWindow.update(dt, this.camera.position, p.pos);
+    this.markDig.update(dt, this.camera.position, p.pos);
+    // しばらく進まなければ、ことばでも教える
+    if (active && !F.windowOpen) {
+      F.winHintT = (F.winHintT || 0) + dt;
+      if (F.winHintT > 9 && !F.winHinted) { F.winHinted = true; this.ui.toast('光っている窓のすき間を、鼻でおしてみよう', 'nose'); }
+    }
+    if (active && F.escaped && !F.dug) {
+      F.digHintT = (F.digHintT || 0) + dt;
+      if (F.digHintT > 7 && !F.digHinted) {
+        F.digHinted = true;
+        this.ui.toast(this.ctl.touch ? '柵の下の土が やわらかそう。印の所で「ほる」を長押し' : '柵の下の土が やわらかそう。印の所で E を長押し', 'paw');
+      }
+    }
+    // すき間の光はゆっくり明滅。外の風に乗って、光の粒が部屋に入ってくる
+    const glow = this.town.win.glow;
+    const g = !F.windowOpen && (this.state === 'play' || this.state === 'prologue') ? 1 : 0;
+    this.gapK = damp(this.gapK || 0, g, g ? 2 : 5, dt);
+    glow.material.opacity = this.gapK * (0.75 + 0.25 * Math.sin(this.t * 2.4));
+    glow.visible = this.gapK > 0.01;
+    if (this.gapK > 0.5 && Math.random() < dt * 7) {
+      const z = glow.position.z + (Math.random() - 0.5) * 0.08;
+      this.fx.spawn({ pos: V(ROOM.maxX - 0.05, 0.3 + Math.random() * 1.6, z), vel: V(-0.35 - Math.random() * 0.3, (Math.random() - 0.3) * 0.12, (Math.random() - 0.5) * 0.25), color: 0xffe2a8, size: 0.07 + Math.random() * 0.05, life: 2 + Math.random(), drag: 0.25, shape: Math.random() < 0.5 ? 0 : 3, alpha: 0.8 });
+    }
   }
 
   checkDetours(dt) {
@@ -1241,9 +1287,12 @@ export class Game {
     let orbit = camA - 0.35;
     cam.startCine((c, dt) => {
       orbit += dt * 0.05;
-      const r = Math.max(2.2, 3.0 - ct * 0.1);
-      c.position.set(O.pos.x + Math.sin(orbit) * r, O.pos.y + 1.28, O.pos.z + Math.cos(orbit) * r);
-      c.lookAt(O.pos.x, O.pos.y + 1.12, O.pos.z);
+      // 縦長の画面では横が狭いので引いて、頭の上（吹き出し）にも余白を残す
+      const narrow = c.aspect < 1;
+      const r = Math.max(2.2, 3.0 - ct * 0.1) * (narrow ? 1.7 : 1);
+      // 目線は顔の高さ。抱っこした犬の頭ごしに、飼い主の顔が見えるように
+      c.position.set(O.pos.x + Math.sin(orbit) * r, O.pos.y + 1.58, O.pos.z + Math.cos(orbit) * r);
+      c.lookAt(O.pos.x, O.pos.y + (narrow ? 1.22 : 1.3), O.pos.z);
       if (c.fov !== 38) { c.fov = 38; c.updateProjectionMatrix(); }
       return true;
     });

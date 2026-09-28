@@ -3,6 +3,8 @@ import { cyl, windMaterial, WIND, mat } from './build.js';
 import { puffGeometry, mergeParts, mulberry32 } from '../util.js';
 
 const leafMat = windMaterial({ sway: 0.018 });
+const _up = new THREE.Vector3(0, 1, 0);
+const _dir = new THREE.Vector3();
 const grassMat = windMaterial({ sway: 0.55, side: THREE.DoubleSide, flatShading: false });
 const flowerMat = windMaterial({ sway: 0.5, flatShading: false });
 
@@ -21,12 +23,20 @@ export function tree(g, x, z, kind = 'keyaki', seed = 1, scale = 1) {
   const h = T.h * scale * (0.85 + r() * 0.3);
   const t = new THREE.Group();
   cyl(t, 0.1 * scale, 0.18 * scale, h * 0.62, 0, 0, 0, T.trunk, 8);
-  // 枝
+  // 枝：根元を幹の中に置き、外へ向けて斜めに（葉の塊の中に先が入るように）
+  const lean = kind === 'ginkgo' ? 0.35 : 0.65;
   for (let i = 0; i < 3; i++) {
     const a = r() * Math.PI * 2;
-    const b = cyl(t, 0.05 * scale, 0.08 * scale, h * 0.35, Math.cos(a) * 0.2, h * 0.45, Math.sin(a) * 0.2, T.trunk, 6);
-    b.rotation.z = Math.cos(a) * 0.7;
-    b.rotation.x = -Math.sin(a) * 0.7;
+    const len = h * 0.36;
+    const geo = new THREE.CylinderGeometry(0.045 * scale, 0.075 * scale, len, 6);
+    geo.translate(0, len / 2, 0);
+    const b = new THREE.Mesh(geo, mat(T.trunk));
+    b.position.set(0, h * (0.4 + i * 0.06), 0);
+    _dir.set(Math.cos(a) * Math.sin(lean), Math.cos(lean), Math.sin(a) * Math.sin(lean));
+    b.quaternion.setFromUnitVectors(_up, _dir);
+    b.castShadow = true;
+    b.receiveShadow = true;
+    t.add(b);
   }
   const parts = [];
   const n = kind === 'ginkgo' ? 6 : 9;
@@ -66,7 +76,7 @@ export function hedge(g, x0, z0, x1, z1, h = 1.0, seed = 3) {
   return m;
 }
 
-export function bush(g, x, z, s = 1, seed = 5, flowers = false) {
+export function bush(g, x, z, s = 1, seed = 5, flowers = false, y = 0) {
   const r = mulberry32(seed);
   const parts = [];
   for (let i = 0; i < 4; i++) {
@@ -78,6 +88,7 @@ export function bush(g, x, z, s = 1, seed = 5, flowers = false) {
     parts.push({ geo: puffGeometry(0.07 * s, 0, 0.1, seed + i), matrix: new THREE.Matrix4().makeTranslation(Math.cos(a) * 0.5 * s, 0.55 * s + r() * 0.2, Math.sin(a) * 0.5 * s), color: [0xf28aa8, 0xffffff, 0xf6d35a][i % 3] });
   }
   const m = new THREE.Mesh(mergeParts(parts), leafMat);
+  m.position.set(x, y, z);
   m.castShadow = true;
   m.receiveShadow = true;
   g.add(m);

@@ -100,12 +100,21 @@ function titleCam(c, dt) {
   }
   return true;
 }
-// うちの子えらびの時は、部屋の犬をアップで
+// うちの子えらびの時は、部屋の犬をアップで。
+// 設定カードに隠れない所（横長の画面なら左、縦長なら上）のまんなかに犬が来るよう、画面の中心をずらす
+const customCard = document.querySelector('#screen-custom .sheet-card');
 function customCam(c) {
   const d = player.dog;
-  c.position.set(player.pos.x - 1.3, 0.75, player.pos.z + 1.35);
-  c.lookAt(d.pos.x - 0.35, 0.33, d.pos.z + 0.1);
-  if (c.fov !== 42) { c.fov = 42; c.updateProjectionMatrix(); }
+  const W = innerWidth, H = innerHeight;
+  const land = W >= H;
+  const r = customCard.getBoundingClientRect();
+  const cx = land ? clamp(r.left / 2 / W, 0.2, 0.5) : 0.5;
+  const cy = land ? 0.5 : clamp(r.top / 2 / H, 0.2, 0.5);
+  const k = land ? 1 : 1.55;   // 縦長は横が狭いので引く
+  c.position.set(player.pos.x - 1.3 * k, 0.75 + (k - 1) * 0.3, player.pos.z + 1.35 * k);
+  c.lookAt(d.pos.x, 0.3, d.pos.z);
+  if (c.fov !== 42) c.fov = 42;
+  c.setViewOffset(W, H, W * (0.5 - cx), H * (0.5 - cy), W, H);
   return true;
 }
 
@@ -201,6 +210,7 @@ function soundLabel() {
 }
 function enterTitle() {
   mode = 'title';
+  camera.clearViewOffset();
   show('screen-title');
   ui.hud(false);
   cam.startCine(titleCam);
@@ -216,6 +226,7 @@ function startGame() {
   show(null);
   mode = 'play';
   day.fogScale = 1;
+  camera.clearViewOffset();
   ui.fade(1, 0.5);
   setTimeout(() => {
     cam.override = null;

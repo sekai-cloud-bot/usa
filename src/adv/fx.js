@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp } from '../util.js';
+import { clamp, damp } from '../util.js';
 
 // 形のアトラス（丸・ハート・星・花びら）
 function atlas() {
@@ -179,5 +179,92 @@ export class ScentTrail {
     }
     fx.geo.setDrawRange(0, L.length);
     for (const k of ['position', 'aColor', 'aSize', 'aAlpha', 'aShape']) fx.geo.attributes[k].needsUpdate = true;
+  }
+}
+
+// ------------------------------------------------------------
+// チュートリアルの目じるし（ピン型のアイコン＋足もとで広がる光の輪）
+// ------------------------------------------------------------
+function markerTexture(icon) {
+  const cv = document.createElement('canvas');
+  cv.width = 128; cv.height = 168;
+  const c = cv.getContext('2d');
+  // ピン：金のふち・クリーム色の丸・下向きのとがり
+  c.fillStyle = '#f2a445';
+  c.beginPath();
+  c.moveTo(38, 100); c.lineTo(90, 100); c.lineTo(64, 162); c.closePath();
+  c.fill();
+  c.beginPath(); c.arc(64, 62, 56, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#fffaf2';
+  c.beginPath(); c.arc(64, 62, 46, 0, Math.PI * 2); c.fill();
+  c.save();
+  c.translate(64, 62);
+  const ink = '#5a3a28';
+  if (icon === 'nose') {
+    // 鼻でおす：犬の鼻と、押す向きの矢印
+    c.fillStyle = ink;
+    c.beginPath(); c.ellipse(-10, 4, 20, 15, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#fffaf2';
+    c.beginPath(); c.ellipse(-17, 4, 4.5, 3.5, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(-3, 4, 4.5, 3.5, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#e8744f';
+    c.beginPath(); c.moveTo(14, -8); c.lineTo(32, 4); c.lineTo(14, 16); c.closePath(); c.fill();
+    c.fillRect(8, -1, 10, 10);
+  } else {
+    // ほる：肉球と、かいた土
+    c.fillStyle = ink;
+    c.beginPath(); c.ellipse(0, 2, 15, 12, 0, 0, Math.PI * 2); c.fill();
+    for (const [x, y] of [[-17, -12], [-6, -21], [6, -21], [17, -12]]) { c.beginPath(); c.ellipse(x, y, 5.5, 7, 0, 0, Math.PI * 2); c.fill(); }
+    c.fillStyle = '#9a6a46';
+    c.beginPath(); c.ellipse(0, 30, 26, 8, 0, Math.PI, 0); c.fill();
+    c.strokeStyle = '#e8744f'; c.lineWidth = 4; c.lineCap = 'round';
+    for (const x of [-22, 22]) { c.beginPath(); c.moveTo(x, 12); c.lineTo(x * 1.25, 4); c.stroke(); }
+  }
+  c.restore();
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+export class HintMarker {
+  /** icon: 'nose' | 'dig'、pos: 印を立てる地面の点 */
+  constructor(scene, icon, pos, { ring = 0.5, height = 0.9 } = {}) {
+    this.base = pos.clone();
+    this.height = height;
+    this.mat = new THREE.SpriteMaterial({ map: markerTexture(icon), transparent: true, depthWrite: false, fog: false, toneMapped: false });
+    this.sprite = new THREE.Sprite(this.mat);
+    this.sprite.center.set(0.5, 0);     // とがった先が base の上
+    this.sprite.renderOrder = 8;
+    scene.add(this.sprite);
+    const rg = new THREE.RingGeometry(ring * 0.8, ring, 40);
+    rg.rotateX(-Math.PI / 2);
+    this.ringMat = new THREE.MeshBasicMaterial({ color: 0xffcf7a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false });
+    this.ring = new THREE.Mesh(rg, this.ringMat);
+    this.ring.position.set(pos.x, pos.y + 0.02, pos.z);
+    this.ring.renderOrder = 3;
+    scene.add(this.ring);
+    this.t = 0;
+    this.k = 0;
+    this.on = false;
+    this.sprite.visible = this.ring.visible = false;
+  }
+  show(on) { this.on = on; }
+  update(dt, camPos, dogPos) {
+    this.t += dt;
+    this.k = damp(this.k, this.on ? 1 : 0, this.on ? 3 : 6, dt);
+    const vis = this.k > 0.01;
+    this.sprite.visible = this.ring.visible = vis;
+    if (!vis) return;
+    const b = this.base;
+    // 遠くからでも見える大きさに。犬がすぐそばに来たら、うすく小さく（ボタンが光るので）
+    const s = clamp(camPos.distanceTo(b) * 0.09, 0.5, 1.2);
+    const near = dogPos ? clamp((Math.hypot(dogPos.x - b.x, dogPos.z - b.z) - 0.5) / 1.5, 0.3, 1) : 1;
+    const bob = Math.sin(this.t * 3.2) * 0.06;
+    this.sprite.position.set(b.x, b.y + this.height + bob, b.z);
+    this.sprite.scale.set(s * 0.76 * (0.7 + 0.3 * near), s * (0.7 + 0.3 * near), 1);
+    this.mat.opacity = this.k * (0.45 + 0.55 * near);
+    const p = (this.t * 0.7) % 1;
+    this.ring.scale.setScalar(0.6 + p * 0.7);
+    this.ringMat.opacity = this.k * (1 - p) * 0.85;
   }
 }

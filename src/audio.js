@@ -13,6 +13,8 @@ const MELODY = [
 const BASS = [48, 45, 41, 43, 48, 45, 41, 43];
 const PENTA = [0, 2, 4, 7, 9];
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+// 生き物の声などは、短い間に何度も鳴らすと重なってうるさいので間引く（秒）
+const MIN_GAP = { meow: 0.7, caw: 0.9, coo: 0.4, quack: 0.5, chirp: 0.25, flap: 0.3, horn: 0.6 };
 
 export class Audio {
   constructor() {
@@ -23,6 +25,7 @@ export class Audio {
     this.bgmNext = 0;
     this.bgmTimer = null;
     this.bgmLevel = 1;
+    this.lastPlay = {};
   }
 
   unlock() {
@@ -112,6 +115,12 @@ export class Audio {
 
   play(name, p = 1) {
     if (!this.ok) return;
+    const gap = MIN_GAP[name];
+    if (gap) {
+      const now = this.ctx.currentTime;
+      if (now - (this.lastPlay[name] ?? -99) < gap) return;
+      this.lastPlay[name] = now;
+    }
     const r = Math.random;
     switch (name) {
       case 'grab': this._osc('sine', 480 * p, 900 * p, 0.08, 0.22); break;

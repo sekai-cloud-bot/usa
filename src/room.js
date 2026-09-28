@@ -315,6 +315,29 @@ export function buildRoom(scene, renderer, opts = {}) {
   // 巾木
   addBox(W, 0.1, 0.03, 0, 0.05, ROOM.minZ + 0.015, baseMat, false);
   addBox(0.03, 0.1, D, ROOM.minX + 0.015, 0.05, 0, baseMat, false);
+  // 手前（南）の壁：冒険版は外から家を見るので閉じる。外壁の玄関・腰窓の裏側に、内側のドアと窓
+  if (town) {
+    addBox(W + 0.24, H, 0.14, 0, H / 2, ROOM.maxZ + 0.07, wallMat);
+    addBox(W, 0.1, 0.03, 0, 0.05, ROOM.maxZ - 0.015, baseMat, false);
+    const iz = ROOM.maxZ - 0.02;
+    const door = new THREE.Mesh(new RoundedBoxGeometry(0.95, 2.05, 0.05, 2, 0.02), std(0xd39a61, 0.55));
+    door.position.set(-2.6, 1.025, iz);
+    door.castShadow = true;
+    door.receiveShadow = true;
+    room.add(door);
+    for (const y of [0.55, 1.45]) addBox(0.66, 0.6, 0.02, -2.6, y, iz - 0.03, std(0xc98c52, 0.6), false);
+    addBox(1.09, 0.07, 0.06, -2.6, 2.085, iz, std(0xe8c49a, 0.6), false);
+    const knobIn = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), std(0x8a7a6a, 0.3, { metalness: 0.6 }));
+    knobIn.position.set(-2.2, 1.0, iz - 0.06);
+    room.add(knobIn);
+    // 腰窓（外の窓と同じ位置）。すりガラスで、ほんのり明るい
+    const wFrame = std(0xe8c49a, 0.6);
+    const pane = std(0xdcebf2, 0.3, { emissive: 0xfff4e0, emissiveIntensity: 0.35 });
+    addBox(1.6, 1.2, 0.02, 2.2, 1.6, iz, pane, false);
+    addBox(1.74, 0.07, 0.06, 2.2, 2.235, iz, wFrame, false);
+    addBox(1.8, 0.05, 0.14, 2.2, 0.99, iz - 0.04, wFrame, false);
+    for (const x of [1.37, 2.2, 3.03]) addBox(0.07, 1.2, 0.05, x, 1.6, iz, wFrame, false);
+  }
 
   // 窓枠・ガラス・外の景色
   const frameMat = std(0xe8c49a, 0.6);

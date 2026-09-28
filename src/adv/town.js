@@ -296,6 +296,18 @@ export function buildTown(scene, renderer, day) {
     return g;
   };
   const pools = new LightPools(scene);
+  // 家を置いて、当たり判定もつける（ry は 0・±90°・180° のどれか）
+  const house = (g, x, z, opts, ry = 0) => {
+    const hs = makeHouse(opts);
+    hs.rotation.y = ry;
+    hs.position.set(x, 0, z);
+    g.add(hs);
+    const side = Math.abs(Math.sin(ry)) > 0.5;
+    const w = opts.w ?? 7, d = opts.d ?? 7;
+    const hx = (side ? d : w) / 2, hz = (side ? w : d) / 2;
+    col.addBox(x - hx, x + hx, z - hz, z + hz, 0, (opts.floors ?? 2) * 2.7, 'house');
+    return hs;
+  };
   const anchors = {};
   const dynamic = [];   // update(dt, t) を持つもの
   const petalsEmit = [];
@@ -359,12 +371,33 @@ export function buildTown(scene, renderer, day) {
   slider.position.set(ROOM.maxX - 0.05, 0, (WINDOW.z1 - 1.2) / 2);
   scene.add(slider);
   const sliderCol = col.addBox(ROOM.maxX - 0.12, ROOM.maxX + 0.02, -1.2, WINDOW.z1, 0, WINDOW.y1, 'glass');
+  // すき間からもれる光（チュートリアルの目じるし。あいたら消える）
+  const gapTex = canvasTex(32, 128, (c, w, h) => {
+    const gx = c.createLinearGradient(0, 0, w, 0);
+    gx.addColorStop(0, 'rgba(255,255,255,0)'); gx.addColorStop(0.5, 'rgba(255,255,255,1)'); gx.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = gx;
+    c.fillRect(0, 0, w, h);
+    c.globalCompositeOperation = 'destination-in';
+    const gy = c.createLinearGradient(0, 0, 0, h);
+    gy.addColorStop(0, 'rgba(0,0,0,0)'); gy.addColorStop(0.2, 'rgba(0,0,0,1)'); gy.addColorStop(0.85, 'rgba(0,0,0,1)'); gy.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = gy;
+    c.fillRect(0, 0, w, h);
+  }, { srgb: false });
+  const gapGlow = new THREE.Mesh(new THREE.PlaneGeometry(1, WINDOW.y1 - 0.1), new THREE.MeshBasicMaterial({ map: gapTex, color: 0xffc978, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false }));
+  gapGlow.rotation.y = Math.PI / 2;
+  gapGlow.position.set(ROOM.maxX - 0.03, WINDOW.y1 / 2, 0);
+  gapGlow.renderOrder = 4;
+  scene.add(gapGlow);
   const win = {
     open: 0.14,
+    glow: gapGlow,
     set(o) {
       this.open = o;
       slider.position.z = (WINDOW.z1 - 1.2) / 2 - o;
       sliderCol.z1 = WINDOW.z1 - o;
+      // 光の帯はすき間の幅に合わせる（広い帯は少し太めに見せる）
+      gapGlow.position.z = WINDOW.z1 - o / 2 - 0.02;
+      gapGlow.scale.x = Math.max(0.34, o * 2.2);
     },
   };
   win.set(0.14);
@@ -438,7 +471,14 @@ export function buildTown(scene, renderer, day) {
   woodFence(home, 4.8, fenceZ, 9.35, fenceZ, 1.3);
   woodFence(home, 10.65, fenceZ, 13.5, fenceZ, 1.3);
   // 掘れる所の柵は下に隙間
-  woodFence(home, 9.35, fenceZ, 10.65, fenceZ, 1.3);
+  {
+    // 板を少し持ち上げて、下にすき間が見えるように（横木の高さは両どなりとそろえる）
+    const f = woodFence(home, 9.35, fenceZ, 10.65, fenceZ, 1.1);
+    f.position.y = 0.2;
+    const rails = f.children.slice(-2);
+    rails[0].position.y = 1.3 * 0.25 + 0.035 - 0.2;
+    rails[1].position.y = 1.3 * 0.75 + 0.035 - 0.2;
+  }
   col.addBox(4.8, 9.35, fenceZ - 0.08, fenceZ + 0.08, 0, 1.3, 'fence');
   col.addBox(10.65, 13.5, fenceZ - 0.08, fenceZ + 0.08, 0, 1.3, 'fence');
   anchors.digBox = col.addBox(9.35, 10.65, fenceZ - 0.08, fenceZ + 0.08, 0, 1.3, 'fence');
@@ -453,6 +493,12 @@ export function buildTown(scene, renderer, day) {
   blockWall(home, -6, -1.1, fenceZ - 0.08, fenceZ + 0.08, 1.2);
   blockWall(home, 1.1, 4.8, fenceZ - 0.08, fenceZ + 0.08, 1.2);
   col.addBox(-6, 4.8, fenceZ - 0.08, fenceZ + 0.08, 0, 1.2, 'wall');
+  // 犬小屋や自転車を足場にして柵・塀を越えられないよう、見えない壁で庭を囲む（カメラは素通り）。
+  // 掘る所の柵は、掘ったあと当たりを消すので、その区間の箱ごと高くしておく
+  anchors.digBox.y1 = 3;
+  for (const [x0, x1, z0, z1] of [[-6, 9.35, fenceZ - 0.08, fenceZ + 0.08], [10.65, 13.58, fenceZ - 0.08, fenceZ + 0.08], [13.42, 13.58, -7.08, fenceZ], [-6.08, 13.58, -7.08, -6.92], [-6.08, -5.92, -7.08, fenceZ]]) {
+    col.addBox(x0, x1, z0, z1, 0, 3, 'thin');
+  }
   // 門扉（閉まっている）
   for (let i = 0; i < 11; i++) box(home, 0.03, 1.05, 0.03, -1.0 + i * 0.2, 0.05, fenceZ, 0x4a4f55, { cast: true });
   box(home, 2.1, 0.05, 0.05, 0, 1.05, fenceZ, 0x4a4f55);
@@ -461,6 +507,15 @@ export function buildTown(scene, renderer, day) {
   const dirt = cyl(home, 0.55, 0.62, 0.05, DIG.x, 0, DIG.z - 0.45, 0x8a6446, 12, { cast: false });
   dirt.scale.set(1, 1, 0.7);
   anchors.digSoil = dirt;
+  // 柵の下のくぼみ（外の路地がのぞく暗がり）と、かき出した土の山・爪あと
+  const dip = new THREE.Mesh(new THREE.CircleGeometry(0.5, 20), new THREE.MeshBasicMaterial({ color: 0x3a281c }));
+  dip.rotation.x = -Math.PI / 2;
+  dip.scale.set(1.1, 0.45, 1);
+  dip.position.set(DIG.x, 0.008, DIG.z - 0.05);
+  home.add(dip);
+  ball(home, 0.2, DIG.x + 0.62, 0.02, DIG.z - 0.62, 0x7a5638, { sx: 1.5, sy: 0.4, sz: 1, seg: 8, seg2: 5 });
+  ball(home, 0.12, DIG.x - 0.58, 0.02, DIG.z - 0.7, 0x7a5638, { sx: 1.3, sy: 0.45, sz: 1, seg: 8, seg2: 5 });
+  for (const [dx, a] of [[-0.18, 0.25], [0, 0], [0.18, -0.25]]) box(home, 0.035, 0.012, 0.36, DIG.x + dx, 0.05, DIG.z - 0.5, 0x4a3222, { ry: a, cast: false });
   const hole = new THREE.Mesh(new THREE.CircleGeometry(0.42, 16), new THREE.MeshBasicMaterial({ color: 0x2a1c14 }));
   hole.rotation.x = -Math.PI / 2;
   hole.scale.set(1, 0.7, 1);
@@ -520,17 +575,9 @@ export function buildTown(scene, renderer, day) {
   for (let i = 0; i < 4; i++) ball(home, 0.06, 8.85 + i * 0.8, 0.28, -2.95, 0xe85d45, { seg: 6, seg2: 4, cast: false });
   grassField(home, [[4.8, -6.8, 13.4, 5.4], [-5.9, -6.8, -4.7, 3.4]], 2200, (x, z) => (x > 8.3 && x < 11.7 && z > -3.5 && z < -1.5) || (x < 6.7 && z > -3.3 && z < 1.0), 21);
   // 近所の家（西）
-  for (const [x, w] of [[-12.8, 10], [-24, 9]]) {
-    const hs = makeHouse({ w, d: 8, floors: 2 });
-    hs.position.set(x, 0, -0.2);
-    home.add(hs);
-  }
+  for (const [x, w] of [[-12.8, 10], [-24, 9]]) house(home, x, -0.2, { w, d: 8, floors: 2 });
   // 家の北側
-  for (const [x, z, w] of [[-10, -16, 9], [2, -15, 10], [14, -15, 8], [25, -16, 9]]) {
-    const hs = makeHouse({ w, d: 8, floors: 2 });
-    hs.position.set(x, 0, z);
-    home.add(hs);
-  }
+  for (const [x, z, w] of [[-10, -16, 9], [2, -15, 10], [14, -15, 8], [25, -16, 9]]) house(home, x, z, { w, d: 8, floors: 2 });
   anchors.window = new THREE.Vector3(ROOM.maxX, 0, 0.3);
   anchors.bed = new THREE.Vector3(2.95, 0, -2.2);
 
@@ -546,22 +593,18 @@ export function buildTown(scene, renderer, day) {
   // マンホール
   for (const x of [3, 27]) cyl(lane, 0.32, 0.32, 0.012, x, 0.004, 8.6, mat(0x6b6a68, { rough: 0.6, metal: 0.3 }), 20, { cast: false });
   // 北側：隣の家と塀
-  for (const [x, w, z] of [[19.2, 8.4, -0.6], [28.2, 6, 0.4]]) {
-    const hs = makeHouse({ w, d: 7.5, floors: 2 });
-    hs.position.set(x, 0, z);
-    lane.add(hs);
-  }
+  for (const [x, w, z] of [[19.2, 8.4, -0.6], [28.2, 6, 0.4]]) house(lane, x, z, { w, d: 7.5, floors: 2 });
   blockWall(lane, 13.58, 32, 5.52, 5.68, 1.4);
   col.addBox(13.58, 32, 5.5, 5.7, 0, 1.4, 'wall');
   blockWall(lane, -30, -6.08, 5.52, 5.68, 1.4);
   col.addBox(-30, -6.08, 5.5, 5.7, 0, 1.4, 'wall');
+  // 塀の上は歩けるが、裏の家の庭へは降りられない（見えない壁。カメラは素通り）
+  col.addBox(13.58, 32, 4.6, 5.25, 0, 4, 'thin');
+  col.addBox(-30, -6.08, 4.6, 5.25, 0, 4, 'thin');
   // 南側：家が並ぶ（正面は北向き）
   const southHouses = [[-24.5, 9], [-13.5, 9], [-2.5, 9.5], [8.5, 9], [19.5, 9], [30.5, 9], [41.5, 9]];
   for (const [x, w] of southHouses) {
-    const hs = makeHouse({ w, d: 8, floors: 2 });
-    hs.rotation.y = Math.PI;
-    hs.position.set(x, 0, 17.6);
-    lane.add(hs);
+    house(lane, x, 17.6, { w, d: 8, floors: 2 }, Math.PI);
     // 前庭の植木と自転車
     if (R() < 0.7) pottedPlant(lane, x - w / 2 + 1.2, 12.3, 1.2);
     if (R() < 0.5) bicycle(lane, x + 2, 12.4, 0.2);
@@ -572,6 +615,7 @@ export function buildTown(scene, renderer, day) {
     blockWall(lane, x + 0.75, x + w / 2 + 1, 11.3, 11.46, 1.4);
   }
   col.addBox(-31, 48, 11.3, 11.5, 0, 1.4, 'wall');
+  col.addBox(-31, 48, 11.75, 12.4, 0, 4, 'thin');
   // 西の突き当たり：小さなお社
   {
     const sx = -28.6, sz = 8.45;
@@ -748,7 +792,7 @@ export function buildTown(scene, renderer, day) {
   col.addBox(42.6, 43.4, -33.8, -32.2, 0, 0.45, 'bench');
   for (const z of [-11, -26, -40.5]) {
     slab(st, col, 42.3, 43.7, z - 0.7, z + 0.7, 0.45, M.wood, 1, 0, 'planter');
-    bush(st, 43, z, 0.8, Math.floor(z * -3), true);
+    bush(st, 43, z, 0.8, Math.floor(z * -3), true, 0.4);
   }
   // のぼり旗
   const flagCols = ['#d94f6b', '#3e6ea8', '#f0a13a', '#3f8f6a'];
@@ -932,9 +976,15 @@ export function buildTown(scene, renderer, day) {
     dynamic.push({ update: (dt, t) => sw.children.forEach((s, i) => { s.rotation.x = Math.sin(t * 1.6 + i * 1.3) * 0.08; }) });
   }
   // ベンチと公園灯
+  // ベンチの当たりは、長さに沿って3つの円（斜めに置いたベンチの端も抜けないように）
+  const benchCol = (x, z, ry, y0) => {
+    for (const o of [-0.5, 0, 0.5]) col.addCircle(x + Math.cos(ry) * o, z - Math.sin(ry) * o, 0.32, y0, y0 + 0.45, 'bench');
+  };
+  anchors.benches = { park: [], plaza: [] };
   for (const [x, z, ry] of [[48.5, -63.5, -0.4], [61, -67.8, -0.35], [44.5, -76, Math.PI / 2], [59, -87, Math.PI]]) {
     bench(park, x, z, ry);
-    col.addCircle(x, z, 0.55, 0, 0.45, 'bench');
+    benchCol(x, z, ry, 0);
+    anchors.benches.park.push({ x, z, ry, y: 0 });
   }
   for (const [x, z] of [[46, -58], [57, -65.5], [68, -69.5], [40, -74], [62, -76], [48, -90], [74, -73.5]]) {
     parkLamp(park, x, z);
@@ -980,17 +1030,8 @@ export function buildTown(scene, renderer, day) {
     return false;
   }, 22, -0.01);
   // 公園の外（西・北）の家並み
-  for (let i = 0; i < 5; i++) {
-    const hs = makeHouse({ w: 9, d: 8, floors: 2 });
-    hs.rotation.y = -Math.PI / 2;
-    hs.position.set(20.5, 0, -56 - i * 9.5);
-    park.add(hs);
-  }
-  for (let i = 0; i < 6; i++) {
-    const hs = makeHouse({ w: 8.5, d: 8, floors: 2 + (i % 2) });
-    hs.position.set(30 + i * 9.2, 0, -102);
-    park.add(hs);
-  }
+  for (let i = 0; i < 5; i++) house(park, 20.5, -56 - i * 9.5, { w: 9, d: 8, floors: 2 }, -Math.PI / 2);
+  for (let i = 0; i < 6; i++) house(park, 30 + i * 9.2, -102, { w: 8.5, d: 8, floors: 2 + (i % 2) });
 
   // ==========================================================
   // 5) 大通りと横断歩道
@@ -1201,7 +1242,8 @@ export function buildTown(scene, renderer, day) {
   for (const [x, z, ry] of [[104, -63, 0], [116, -63, 0], [116, -84, Math.PI], [104, -93, Math.PI]]) {
     const b = bench(plaza, x, z, ry, 0x9c7650);
     b.position.y = 0.15;
-    col.addCircle(x, z, 0.55, 0.15, 0.6, 'bench');
+    benchCol(x, z, ry, 0.15);
+    anchors.benches.plaza.push({ x, z, ry, y: 0.15 });
   }
   anchors.benchWait = new THREE.Vector3(116, 0.6, -84);
   // バス停
@@ -1382,18 +1424,8 @@ export function buildTown(scene, renderer, day) {
   for (let x = -60; x < 70; x += 18) farBlock(x, -130 - fr() * 6, 15, 12, 10 + fr() * 14);
   for (let z = -120; z < 40; z += 16) farBlock(-48 - fr() * 6, z, 12, 14, 8 + fr() * 10);
   // 商店街の裏手
-  for (let z = -45; z < -30; z += 11) {
-    const hs = makeHouse({ w: 9, d: 9, floors: 3, flat: true });
-    hs.rotation.y = -Math.PI / 2;
-    hs.position.set(26.5, 0, z);
-    far.add(hs);
-  }
-  for (let z = -40; z < 0; z += 12) {
-    const hs = makeHouse({ w: 10, d: 10, floors: 4, flat: true });
-    hs.rotation.y = Math.PI / 2;
-    hs.position.set(60.5, 0, z);
-    far.add(hs);
-  }
+  for (let z = -45; z < -30; z += 11) house(far, 26.5, z, { w: 9, d: 9, floors: 3, flat: true }, -Math.PI / 2);
+  for (let z = -40; z < 0; z += 12) house(far, 60.5, z, { w: 10, d: 10, floors: 4, flat: true }, Math.PI / 2);
   const mtn = mountains(scene);
 
   // ==========================================================
