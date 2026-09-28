@@ -45,18 +45,23 @@ function hash3(x, y, z, seed) {
   return ((h >>> 0) % 10000) / 10000;
 }
 
-/** ローポリのもこもこ玉 */
-export function puffGeometry(radius, detail = 1, jitter = 0.12, seed = 1) {
+/**
+ * もこもこ玉。smooth なら法線は中心から外向き（面の角が出ない、やわらかい陰影）。
+ * jitter で形はでこぼこのまま、光だけなめらかに回る
+ */
+export function puffGeometry(radius, detail = 1, jitter = 0.12, seed = 1, smooth = true) {
   const g = new THREE.IcosahedronGeometry(radius, detail);
   const p = g.attributes.position;
+  const n = g.attributes.normal;
   const v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
     const k = 1 + (hash3(v.x, v.y, v.z, seed) - 0.5) * 2 * jitter;
+    if (smooth) { const l = v.length() || 1; n.setXYZ(i, v.x / l, v.y / l, v.z / l); }
     v.multiplyScalar(k);
     p.setXYZ(i, v.x, v.y, v.z);
   }
-  g.computeVertexNormals();
+  if (!smooth) g.computeVertexNormals();
   return g;
 }
 

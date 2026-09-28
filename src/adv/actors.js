@@ -2,16 +2,13 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeParts, mat as M4, clamp, damp, dampAngle, angleDiff, mulberry32, puffGeometry } from '../util.js';
 import { LIGHTS } from './build.js';
+import { softMaterial, furMaterial } from './look.js';
 import { audio } from '../audio.js';
 
 // ------------------------------------------------------------
 // 人（ころんとした等身。部位ごとに1メッシュ）
 // ------------------------------------------------------------
-const personMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
-personMat.userData.shared = true;
-personMat.onBeforeCompile = (sh) => {
-  sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * 0.1;');
-};
+const personMat = softMaterial({ rim: 0.4, self: 0.07, rough: 0.82 });
 
 const SKIN = [0xf6d2b8, 0xefc3a4, 0xe2b08e, 0xf8dcc6];
 const rb = (w, h, d, r = 0.06) => new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2, h / 2, d / 2));
@@ -274,10 +271,7 @@ export class Person {
 export class Cat {
   constructor(scene, { color = 0xf0a55e, belly = 0xfff4e6, stripes = 0xc9773a } = {}) {
     const g = new THREE.Group();
-    const bm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true });
-    bm.onBeforeCompile = (sh) => {
-      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * 0.15;');
-    };
+    const bm = furMaterial({ rim: 0.6, fuzz: 0.4, self: 0.12, scale: 90 });
     // 胴：前が少し高い、しなやかな形
     const bodyParts = [
       { geo: cap(0.11, 0.26, 10), matrix: M4(0, 0.2, 0, Math.PI / 2 - 0.08), color },
@@ -404,7 +398,7 @@ export class Cat {
 export class Crow {
   constructor(scene) {
     const g = new THREE.Group();
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.25, flatShading: true });
+    const m = softMaterial({ rough: 0.32, metal: 0.3, rim: 0.6, self: 0.02 });
     const black = 0x1d1e26, beak = 0x2b2b30;
     const body = new THREE.Mesh(mergeParts([
       { geo: sph(0.14, 10, 8), matrix: M4(0, 0.2, 0, 0, 0, 0, 0.85, 0.85, 1.4), color: black },
@@ -466,6 +460,8 @@ export class Crow {
   }
 }
 
+const _wRot = new THREE.Matrix4();
+const _wPos = new THREE.Matrix4();
 // ------------------------------------------------------------
 // ハトの群れ（インスタンス描画で2命令）
 // ------------------------------------------------------------
@@ -481,7 +477,7 @@ export class Pigeons {
       { geo: cy(0.008, 0.008, 0.08, 3), matrix: M4(0.03, 0.04, 0), color: 0xd97a7a },
     ]);
     const wingGeo = mergeParts([{ geo: new THREE.BoxGeometry(0.2, 0.012, 0.13), matrix: M4(0.1, 0, 0), color: 0x8a909b }]);
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, flatShading: true });
+    const m = softMaterial({ rough: 0.65, rim: 0.45, self: 0.05 });
     this.body = new THREE.InstancedMesh(bodyGeo, m, count);
     this.wing = new THREE.InstancedMesh(wingGeo, m, count * 2);
     this.body.castShadow = true;
@@ -553,11 +549,14 @@ export class Pigeons {
       this.q.setFromEuler(this.e);
       this.m4.compose(b.p, this.q, this.s);
       this.body.setMatrixAt(i, this.m4);
+      b.fold = damp(b.fold ?? 1, flying ? 0 : 1, 10, dt);
       const flap = flying ? Math.sin(b.t * 30 + b.seed * 9) * 1.0 : 0;
       for (const side of [0, 1]) {
         const sg = side ? 1 : -1;
-        const wm = new THREE.Matrix4().makeRotationZ(sg > 0 ? -0.05 + flap : Math.PI + 0.05 - flap);
-        wm.premultiply(new THREE.Matrix4().makeTranslation(sg * 0.07, 0.16, -0.01));
+        // 地上ではたたんで背中にそわせる（うしろ向き・少し下がる）
+        const wm = new THREE.Matrix4().makeRotationZ(sg > 0 ? -0.05 + flap * (1 - b.fold) - b.fold * 0.35 : Math.PI + 0.05 - flap * (1 - b.fold) + b.fold * 0.35);
+        wm.premultiply(_wRot.makeRotationY(sg * 1.4 * b.fold));
+        wm.premultiply(_wPos.makeTranslation(sg * (0.07 - 0.03 * b.fold), 0.16 + 0.015 * b.fold, -0.01 + 0.03 * b.fold));
         wm.premultiply(this.m4);
         this.wing.setMatrixAt(i * 2 + side, wm);
       }
@@ -574,7 +573,7 @@ export class Ducks {
   constructor(scene, pond) {
     this.pond = pond;
     this.list = [];
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, flatShading: true });
+    const m = softMaterial({ rough: 0.6, rim: 0.45, self: 0.05 });
     for (let i = 0; i < 3; i++) {
       const male = i !== 1;
       const geo = mergeParts([
@@ -610,7 +609,7 @@ const CAR_TYPES = [
   { kind: 'bus', len: 10.5, w: 2.4, h: 3.0, body: [0x3f8f6a] },
   { kind: 'van', len: 4.8, w: 1.8, h: 2.0, body: [0xf2f2ee] },
 ];
-const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.15 });
+const carMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08 });
 const headMat = LIGHTS.make(0xfff2d0, 0.2, 3.2, 0xfffaf0);
 const tailMat = LIGHTS.make(0xff3030, 0.35, 2.2, 0xd02020);
 
@@ -750,10 +749,7 @@ export class Train {
     this.track = track;
     this.cars = [];
     const n = 4, L = 19;
-    const bodyM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.2 });
-    bodyM.onBeforeCompile = (sh) => {
-      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * 0.18;');
-    };
+    const bodyM = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.4, clearcoat: 1, clearcoatRoughness: 0.12 });
     const winM = LIGHTS.make(0xfff0d0, 0.15, 0.85, 0x3a4658);
     this.group = new THREE.Group();
     for (let i = 0; i < n; i++) {

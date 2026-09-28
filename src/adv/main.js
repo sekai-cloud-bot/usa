@@ -6,6 +6,7 @@ import { Player } from './player.js';
 import { TPCam } from './tpcam.js';
 import { Controls } from './controls.js';
 import { WIND } from './build.js';
+import { GRASS } from './nature.js';
 import { UI } from './ui.js';
 import { Game, FRIENDS, GIFTS, DETOURS } from './game.js';
 import { loadSave, save, getSave } from './save.js';
@@ -27,7 +28,7 @@ const touch = isTouchDevice();
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -47,6 +48,7 @@ day.setHour(17.2);
 setLoading('町を建てています…');
 const town = buildTown(scene, renderer, day);
 const post = new Post(renderer, scene, camera);
+post.noAO.push(day.sky, town.mtn.far, town.mtn.near);
 post.setLevel(level);
 const player = new Player(scene, town.col);
 const cam = new TPCam(camera, town.col);
@@ -62,11 +64,13 @@ player.dog.setExpr('sleep');
 const game = new Game({ scene, camera, renderer, day, town, player, cam, ctl, post, ui, save: data });
 
 function applyShadowQuality() {
-  const size = level === 0 ? 1024 : 2048;
+  const size = [1024, 2048, 4096][level];
   if (day.sun.shadow.mapSize.x !== size) {
     day.sun.shadow.mapSize.set(size, size);
     if (day.sun.shadow.map) { day.sun.shadow.map.dispose(); day.sun.shadow.map = null; }
   }
+  day.setShadowRange([18, 24, 30][level]);
+  GRASS.density = [0.3, 0.62, 1][level];
 }
 applyShadowQuality();
 
@@ -140,6 +144,9 @@ function step(dt) {
   else focus.copy(player.pos);
   day.update(dt, focus, camera.position);
   town.update(dt, t, hour, camera.position, focus);
+  post.updateSun(day.sunDir, day.sun.color, day.golden);
+  post.grade.uniforms.uWarm.value = day.golden;
+  post.grade.uniforms.uDusk.value = day.dusk;
   ui.updateBubbles();
   const h = renderer.domElement.height;
   game.fx.setScale(h); game.dust.setScale(h); game.trail.fx.setScale(h);

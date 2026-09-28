@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { puffGeometry, mergeParts, mat, shadeColor, mulberry32, clamp } from './util.js';
+import { furMaterial, addFurShells } from './adv/look.js';
 
 export const COLORS = [
   { id: 'white', label: 'ホワイト', hex: '#f8f3ec' },
@@ -59,20 +60,14 @@ export function colorHex(id) {
 const M = {};
 function mats() {
   if (M.fur) return M;
-  M.fur = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.93, metalness: 0 });
-  // 毛の中で光が回るイメージ：影側も地の色で少し明るく（白い子が灰色にならないように）
-  M.fur.onBeforeCompile = (sh) => {
-    sh.fragmentShader = sh.fragmentShader.replace(
-      '#include <emissivemap_fragment>',
-      '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * 0.2;',
-    );
-  };
-  M.eye = new THREE.MeshStandardMaterial({ color: 0x1b1412, roughness: 0.18, metalness: 0.0 });
-  M.nose = new THREE.MeshStandardMaterial({ color: 0x2a1e1b, roughness: 0.35 });
+  // 毛：なめらかな陰影＋細かい毛並みのゆらぎ＋逆光でふちが光る
+  M.fur = furMaterial({ rim: 0.45, fuzz: 0.5, self: 0.08, scale: 70 });
+  M.eye = new THREE.MeshStandardMaterial({ color: 0x160f0d, roughness: 0.06, metalness: 0.0, envMapIntensity: 1.6 });
+  M.nose = new THREE.MeshStandardMaterial({ color: 0x2a1e1b, roughness: 0.28, envMapIntensity: 1.2 });
   M.hi = new THREE.MeshBasicMaterial({ color: 0xffffff });
   M.tongue = new THREE.MeshStandardMaterial({ color: 0xf07a8c, roughness: 0.5 });
   M.blush = new THREE.MeshBasicMaterial({ color: 0xff9aa6, transparent: true, opacity: 0.38, depthWrite: false });
-  M.innerEar = new THREE.MeshStandardMaterial({ color: 0xf2b6ad, roughness: 0.9, flatShading: true });
+  M.innerEar = new THREE.MeshStandardMaterial({ color: 0xf2b6ad, roughness: 0.9 });
   M.mouth = new THREE.MeshBasicMaterial({ color: 0x7a3444 });
   for (const k in M) M[k].userData.shared = true;
   return M;
@@ -91,7 +86,7 @@ function verticalShade(geo, y0, y1, amt) {
 /**
  * 犬のリグを生成。前方は +Z。
  */
-export function buildDog(params) {
+export function buildDog(params, opts = {}) {
   const m = mats();
   const rnd = mulberry32(12345);
   const F = clamp(params.fluff, 0, 1);
@@ -109,7 +104,10 @@ export function buildDog(params) {
   const bodyY = legLen + bodyR * 0.82;
   const headR = 0.145 * params.head + F * 0.02;
   const jit = 0.035 + F * 0.075;
-  const detail = F > 0.4 ? 1 : 2;
+  const detail = 2;
+  // 毛の殻（外側のふわふわ）。長さは毛の量で
+  const furLen = opts.shells === false ? 0 : 0.005 + F * 0.024;
+  const shell = (mesh, k = 1) => addFurShells(mesh, furLen * k);
 
   const root = new THREE.Group();
   root.name = 'dog';
@@ -128,21 +126,22 @@ export function buildDog(params) {
       torsoParts.push({ geo: puffGeometry(r, 2, jit * 0.7, 11 + i), matrix: mat(0, (rnd() - 0.5) * 0.02, z), color: vary(coat, 0.02) });
     }
     // 胸毛と脇のもこもこ
-    torsoParts.push({ geo: puffGeometry(bodyR * 0.72, 1, jit, 31), matrix: mat(0, -0.02, bodyLen / 2 + bodyR * 0.35), color: vary(accent) });
+    torsoParts.push({ geo: puffGeometry(bodyR * 0.72, 2, jit, 31), matrix: mat(0, -0.02, bodyLen / 2 + bodyR * 0.35), color: vary(accent) });
     for (const s of [-1, 1]) {
-      torsoParts.push({ geo: puffGeometry(bodyR * 0.62, 1, jit, 41 + s), matrix: mat(s * bodyR * 0.55, -bodyR * 0.2, bodyLen * 0.25), color: vary(coat) });
-      torsoParts.push({ geo: puffGeometry(bodyR * 0.62, 1, jit, 51 + s), matrix: mat(s * bodyR * 0.55, -bodyR * 0.2, -bodyLen * 0.3), color: vary(coat) });
+      torsoParts.push({ geo: puffGeometry(bodyR * 0.62, 2, jit, 41 + s), matrix: mat(s * bodyR * 0.55, -bodyR * 0.2, bodyLen * 0.25), color: vary(coat) });
+      torsoParts.push({ geo: puffGeometry(bodyR * 0.62, 2, jit, 51 + s), matrix: mat(s * bodyR * 0.55, -bodyR * 0.2, -bodyLen * 0.3), color: vary(coat) });
     }
   } else {
     torsoParts.push({ geo: puffGeometry(1, detail, 0.04, 7), matrix: mat(0, 0, 0, 0, 0, 0, bodyR, bodyR * 0.95, bodyLen / 2 + bodyR * 0.75), color: coat });
     // お腹・胸（裏白）
     torsoParts.push({ geo: puffGeometry(1, detail, 0.04, 8), matrix: mat(0, -bodyR * 0.2, bodyR * 0.25, 0, 0, 0, bodyR * 0.86, bodyR * 0.8, bodyLen / 2 + bodyR * 0.55), color: accent });
-    if (F > 0.1) torsoParts.push({ geo: puffGeometry(bodyR * 0.75, 1, 0.12, 9), matrix: mat(0, bodyR * 0.1, bodyLen / 2 + bodyR * 0.2), color: vary(accent) });
+    if (F > 0.1) torsoParts.push({ geo: puffGeometry(bodyR * 0.75, 2, 0.12, 9), matrix: mat(0, bodyR * 0.1, bodyLen / 2 + bodyR * 0.2), color: vary(accent) });
   }
   const torsoGeo = mergeParts(torsoParts);
   verticalShade(torsoGeo, -bodyR, bodyR * 0.3, 0.16);
   const torso = new THREE.Mesh(torsoGeo, m.fur);
   torso.castShadow = true;
+  shell(torso);
   body.add(torso);
 
   // ---- 頭 ----
@@ -165,12 +164,12 @@ export function buildDog(params) {
     ];
     tufts.forEach(([x, y, z, r], i) => {
       const s = 0.85 + F * 0.25;
-      headParts.push({ geo: puffGeometry(headR * r * s, 1, jit, 70 + i), matrix: mat(x * headR, y * headR, z * headR), color: vary(i < 5 ? coat : coat) });
+      headParts.push({ geo: puffGeometry(headR * r * s, 2, jit, 70 + i), matrix: mat(x * headR, y * headR, z * headR), color: vary(i < 5 ? coat : coat) });
     });
     // マズル
-    headParts.push({ geo: puffGeometry(headR * 0.42, 1, jit * 0.8, 91), matrix: mat(0, muzzleY, muzzleZ * 0.95, 0, 0, 0, 1.1, 0.85, 0.85 + 0.2 * snoutL), color: vary(accent, 0.02) });
-    headParts.push({ geo: puffGeometry(headR * 0.3, 1, jit, 92), matrix: mat(headR * 0.3, muzzleY - headR * 0.05, muzzleZ * 0.82), color: vary(accent) });
-    headParts.push({ geo: puffGeometry(headR * 0.3, 1, jit, 93), matrix: mat(-headR * 0.3, muzzleY - headR * 0.05, muzzleZ * 0.82), color: vary(accent) });
+    headParts.push({ geo: puffGeometry(headR * 0.42, 2, jit * 0.8, 91), matrix: mat(0, muzzleY, muzzleZ * 0.95, 0, 0, 0, 1.1, 0.85, 0.85 + 0.2 * snoutL), color: vary(accent, 0.02) });
+    headParts.push({ geo: puffGeometry(headR * 0.3, 2, jit, 92), matrix: mat(headR * 0.3, muzzleY - headR * 0.05, muzzleZ * 0.82), color: vary(accent) });
+    headParts.push({ geo: puffGeometry(headR * 0.3, 2, jit, 93), matrix: mat(-headR * 0.3, muzzleY - headR * 0.05, muzzleZ * 0.82), color: vary(accent) });
   } else {
     headParts.push({ geo: puffGeometry(1, detail, 0.03, 61), matrix: mat(0, 0, 0, 0, 0, 0, headR, headR * 0.92, headR * 0.95), color: coat });
     // 頬（裏白）
@@ -184,10 +183,10 @@ export function buildDog(params) {
     });
     if (params.pattern === 'urajiro') {
       // 麻呂眉
-      for (const s of [-1, 1]) headParts.push({ geo: puffGeometry(headR * 0.1, 1, 0.05, 66 + s), matrix: mat(s * headR * 0.35, headR * 0.38, headR * 0.82, 0, 0, 0, 1.2, 0.8, 0.6), color: accent });
+      for (const s of [-1, 1]) headParts.push({ geo: puffGeometry(headR * 0.1, 2, 0.05, 66 + s), matrix: mat(s * headR * 0.35, headR * 0.38, headR * 0.82, 0, 0, 0, 1.2, 0.8, 0.6), color: accent });
     }
     if (F > 0.1) {
-      for (const s of [-1, 1]) headParts.push({ geo: puffGeometry(headR * 0.45, 1, 0.14, 68 + s), matrix: mat(s * headR * 0.7, -headR * 0.2, -headR * 0.1), color: vary(coat) });
+      for (const s of [-1, 1]) headParts.push({ geo: puffGeometry(headR * 0.45, 2, 0.14, 68 + s), matrix: mat(s * headR * 0.7, -headR * 0.2, -headR * 0.1), color: vary(coat) });
     }
   }
   const headGeo = mergeParts(headParts);
@@ -256,6 +255,14 @@ export function buildDog(params) {
     blush.push(b);
   }
 
+  // 頭の毛：目・鼻・口のまわりはあけておく
+  if (furLen > 0) {
+    const masks = eyes.map((e) => [e.position.x, e.position.y, e.position.z, eyeR * 2.3]);
+    masks.push([0, nose.position.y, nose.position.z, headR * 0.24]);
+    masks.push([0, muzzleY - headR * 0.2, noseZ - headR * 0.06, headR * 0.16]);
+    addFurShells(headMesh, furLen * 0.8, undefined, masks);
+  }
+
   // くわえ位置
   const mouth = new THREE.Object3D();
   mouth.position.set(0, muzzleY - headR * 0.2, noseZ - headR * 0.05);
@@ -270,12 +277,12 @@ export function buildDog(params) {
       ear.position.set(s * headR * 0.78, headR * 0.3, -headR * 0.05);
       const parts = [];
       for (let i = 0; i < 3; i++) {
-        parts.push({ geo: puffGeometry(headR * (0.36 - i * 0.02) * (0.8 + F * 0.3), 1, jit, 100 + i + s * 10), matrix: mat(s * headR * 0.08, -headR * (0.12 + i * 0.26), 0), color: vary(coat) });
+        parts.push({ geo: puffGeometry(headR * (0.36 - i * 0.02) * (0.8 + F * 0.3), 2, jit, 100 + i + s * 10), matrix: mat(s * headR * 0.08, -headR * (0.12 + i * 0.26), 0), color: vary(coat) });
       }
       mesh = new THREE.Mesh(mergeParts(parts), m.fur);
     } else if (params.ear === 'long') {
       ear.position.set(s * headR * 0.8, headR * 0.25, -headR * 0.1);
-      const parts = [{ geo: puffGeometry(1, 1, 0.08, 120 + s), matrix: mat(s * headR * 0.06, -headR * 0.45, 0, 0, 0, s * 0.1, headR * 0.16, headR * 0.55, headR * 0.34), color: shadeColor(coat, -0.06) }];
+      const parts = [{ geo: puffGeometry(1, 2, 0.08, 120 + s), matrix: mat(s * headR * 0.06, -headR * 0.45, 0, 0, 0, s * 0.1, headR * 0.16, headR * 0.55, headR * 0.34), color: shadeColor(coat, -0.06) }];
       mesh = new THREE.Mesh(mergeParts(parts), m.fur);
     } else {
       const big = params.ear === 'big';
@@ -284,7 +291,7 @@ export function buildDog(params) {
       ear.position.set(s * headR * (big ? 0.55 : 0.5), headR * (big ? 0.62 : 0.72), -headR * 0.1);
       ear.rotation.z = -s * (big ? 0.62 : 0.28);
       const parts = [{ geo: new THREE.ConeGeometry(r, h, 5, 1), matrix: mat(0, h * 0.4, 0, 0, 0, 0, 1, 1, 0.55), color: coat }];
-      if (F > 0.5) parts.push({ geo: puffGeometry(r * 0.8, 1, jit, 130 + s), matrix: mat(0, 0, -r * 0.1), color: vary(coat) });
+      if (F > 0.5) parts.push({ geo: puffGeometry(r * 0.8, 2, jit, 130 + s), matrix: mat(0, 0, -r * 0.1), color: vary(coat) });
       mesh = new THREE.Mesh(mergeParts(parts), m.fur);
       const inner = new THREE.Mesh(new THREE.ConeGeometry(r * 0.6, h * 0.7, 5, 1), m.innerEar);
       inner.scale.set(1, 1, 0.3);
@@ -292,6 +299,7 @@ export function buildDog(params) {
       ear.add(inner);
     }
     mesh.castShadow = true;
+    shell(mesh, params.ear === 'fluffy' || params.ear === 'long' ? 1 : 0.5);
     ear.add(mesh);
     ear.userData.baseZ = ear.rotation.z;
     head.add(ear);
@@ -305,25 +313,26 @@ export function buildDog(params) {
   const tailParts = [];
   if (params.tail === 'pom') {
     const r = 0.055 + F * 0.03;
-    tailParts.push({ geo: puffGeometry(r * 0.7, 1, jit, 140), matrix: mat(0, 0.03, -0.01), color: vary(coat) });
-    tailParts.push({ geo: puffGeometry(r, 1, jit, 141), matrix: mat(0, 0.1, -0.02), color: vary(coat) });
-    tailParts.push({ geo: puffGeometry(r * 0.8, 1, jit, 142), matrix: mat(0, 0.16, 0.02), color: vary(coat) });
+    tailParts.push({ geo: puffGeometry(r * 0.7, 2, jit, 140), matrix: mat(0, 0.03, -0.01), color: vary(coat) });
+    tailParts.push({ geo: puffGeometry(r, 2, jit, 141), matrix: mat(0, 0.1, -0.02), color: vary(coat) });
+    tailParts.push({ geo: puffGeometry(r * 0.8, 2, jit, 142), matrix: mat(0, 0.16, 0.02), color: vary(coat) });
   } else if (params.tail === 'plume') {
     for (let i = 0; i < 5; i++) {
       const a = (i / 4) * 2.1;
       const rr = (0.065 + F * 0.03) * (1 - i * 0.08);
-      tailParts.push({ geo: puffGeometry(rr, 1, jit, 150 + i), matrix: mat(0, Math.sin(a) * 0.14 + 0.03, -0.05 + (1 - Math.cos(a)) * 0.08), color: vary(i > 2 ? accent : coat) });
+      tailParts.push({ geo: puffGeometry(rr, 2, jit, 150 + i), matrix: mat(0, Math.sin(a) * 0.14 + 0.03, -0.05 + (1 - Math.cos(a)) * 0.08), color: vary(i > 2 ? accent : coat) });
     }
   } else if (params.tail === 'curl') {
     const tor = new THREE.TorusGeometry(0.065, 0.032 + F * 0.012, 6, 12, Math.PI * 1.55);
     tailParts.push({ geo: tor, matrix: mat(0, 0.085, 0.0, 0, Math.PI / 2, -0.4), color: coat });
-    tailParts.push({ geo: puffGeometry(0.03, 1, 0.1, 160), matrix: mat(0, 0.07, 0.07), color: accent });
+    tailParts.push({ geo: puffGeometry(0.03, 2, 0.1, 160), matrix: mat(0, 0.07, 0.07), color: accent });
   } else {
     const cone = new THREE.ConeGeometry(0.024 + F * 0.012, 0.2, 6, 1);
     tailParts.push({ geo: cone, matrix: mat(0, 0.085, -0.04, -0.45, 0, 0), color: coat });
   }
   const tailMesh = new THREE.Mesh(mergeParts(tailParts), m.fur);
   tailMesh.castShadow = true;
+  shell(tailMesh, 1.2);
   tail.add(tailMesh);
 
   // ---- 脚 ----
@@ -336,16 +345,17 @@ export function buildDog(params) {
     leg.position.set(sx * legX, -bodyY + legLen + 0.01, sz * legZ);
     const parts = [];
     if (F > 0.4) {
-      parts.push({ geo: puffGeometry(legR * 1.15, 1, jit, 170 + sx * 3 + sz), matrix: mat(0, -legLen * 0.25, 0), color: vary(coat) });
-      parts.push({ geo: puffGeometry(legR * 1.1, 1, jit, 180 + sx * 3 + sz), matrix: mat(0, -legLen * 0.62, 0.005), color: vary(coat) });
-      parts.push({ geo: puffGeometry(legR * 1.15, 1, jit, 190 + sx * 3 + sz), matrix: mat(0, -legLen + legR * 0.75, 0.02, 0, 0, 0, 1, 0.8, 1.2), color: vary(accent) });
+      parts.push({ geo: puffGeometry(legR * 1.15, 2, jit, 170 + sx * 3 + sz), matrix: mat(0, -legLen * 0.25, 0), color: vary(coat) });
+      parts.push({ geo: puffGeometry(legR * 1.1, 2, jit, 180 + sx * 3 + sz), matrix: mat(0, -legLen * 0.62, 0.005), color: vary(coat) });
+      parts.push({ geo: puffGeometry(legR * 1.15, 2, jit, 190 + sx * 3 + sz), matrix: mat(0, -legLen + legR * 0.75, 0.02, 0, 0, 0, 1, 0.8, 1.2), color: vary(accent) });
     } else {
       parts.push({ geo: new THREE.CylinderGeometry(legR, legR * 0.9, legLen, 7), matrix: mat(0, -legLen / 2, 0), color: sz > 0 && params.pattern === 'urajiro' ? accent : coat });
-      parts.push({ geo: puffGeometry(legR * 1.15, 1, 0.05, 200 + sx * 3 + sz), matrix: mat(0, -legLen + legR * 0.6, 0.02, 0, 0, 0, 1, 0.7, 1.3), color: params.pattern === 'urajiro' ? accent : coat });
+      parts.push({ geo: puffGeometry(legR * 1.15, 2, 0.05, 200 + sx * 3 + sz), matrix: mat(0, -legLen + legR * 0.6, 0.02, 0, 0, 0, 1, 0.7, 1.3), color: params.pattern === 'urajiro' ? accent : coat });
     }
     const g = mergeParts(parts);
     const lm = new THREE.Mesh(g, m.fur);
     lm.castShadow = true;
+    shell(lm, 0.7);
     leg.add(lm);
     body.add(leg);
     legs.push(leg);

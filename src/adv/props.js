@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { box, cyl, ball, mat, LIGHTS, TEX, signTex, canvasTex } from './build.js';
+import { box, cyl, ball, mat, LIGHTS, TEX, signTex, canvasTex, texMaterial } from './build.js';
 import { mulberry32 } from '../util.js';
 
 const rnd = mulberry32(2024);
@@ -20,7 +20,7 @@ const texMat = new Map();
 function texM(tex, color = 0xffffff, rough = 0.85) {
   const k = tex.uuid + color;
   if (!texMat.has(k)) {
-    const m = new THREE.MeshStandardMaterial({ map: tex, color, roughness: rough });
+    const m = texMaterial(tex, color, rough);
     m.userData.shared = true;
     texMat.set(k, m);
   }

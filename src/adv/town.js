@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { box, cyl, ball, mat, LIGHTS, TEX, makeTextures, signTex, canvasTex, bake } from './build.js';
+import { box, cyl, ball, mat, LIGHTS, TEX, makeTextures, signTex, canvasTex, bake, texMaterial } from './build.js';
 import {
   R, pickR, LM, windowUnit, makeHouse, makeShop, acUnit, utilityPole, wires, streetLamp, parkLamp, vendingMachine,
   bench, bicycle, postBox, pottedPlant, blockWall, woodFence, crate, guardrail, mirror,
 } from './props.js';
-import { tree, hedge, bush, grassField, flowerBed, waterMaterial, Petals } from './nature.js';
+import { tree, hedge, bush, grassField, flowerBed, waterMaterial, Petals, updateGrass } from './nature.js';
 import { Collision } from './collide.js';
 import { buildRoom, ROOM, WINDOW } from '../room.js';
 import { buildDog, breedParams } from '../dogModel.js';
@@ -42,7 +42,7 @@ const gmats = new Map();
 function gmat(tex, color = 0xffffff, rough = 0.95, extra = {}) {
   const k = tex.uuid + '|' + color + '|' + rough + JSON.stringify(extra);
   if (!gmats.has(k)) {
-    const m = new THREE.MeshStandardMaterial({ map: tex, color, roughness: rough, ...extra });
+    const m = texMaterial(tex, color, rough, extra);
     m.userData.shared = true;
     gmats.set(k, m);
   }
@@ -229,37 +229,48 @@ function cityBlock(g, x, z, w, d, h, color) {
   return m;
 }
 
-// 遠景の山（霧を無視して、空の地平線の色になじませる）
-function mountains(scene) {
-  const r = mulberry32(19);
-  const parts = [];
-  for (let i = 0; i < 26; i++) {
-    const a = (i / 26) * Math.PI * 2 + r() * 0.2;
-    const d = 360 + r() * 70;
-    const h = 22 + r() * 34;
-    const w = 80 + r() * 90;
-    const geo = new THREE.ConeGeometry(w, h, 6 + Math.floor(r() * 3), 1);
-    geo.translate(60 + Math.cos(a) * d, h / 2 - 6, -40 + Math.sin(a) * d);
-    parts.push(geo);
-  }
-  const pos = [];
-  for (const gg of parts) {
-    const ng = gg.toNonIndexed();
-    pos.push(...ng.attributes.position.array);
+// 遠景の山並み（霧を無視して、空の地平線の色になじませる）。奥の高い山と、手前の低い丘の2列
+function ridgeRing(radius, base, amp, seed, cx = 60, cz = -40) {
+  const r = mulberry32(seed);
+  const N = 220;
+  const ph = [r() * 6.28, r() * 6.28, r() * 6.28, r() * 6.28];
+  const hAt = (a) => {
+    let v = Math.sin(a * 3 + ph[0]) * 0.35 + Math.sin(a * 7 + ph[1]) * 0.25 + Math.sin(a * 13 + ph[2]) * 0.14 + Math.sin(a * 29 + ph[3]) * 0.07;
+    v = v * 0.5 + 0.5;
+    return base + amp * Math.pow(Math.max(0, v), 1.4);
+  };
+  const pos = [], hh = [];
+  for (let i = 0; i < N; i++) {
+    const a0 = (i / N) * Math.PI * 2, a1 = ((i + 1) / N) * Math.PI * 2;
+    const h0 = hAt(a0), h1 = hAt(a1);
+    const p = (a, y) => [cx + Math.cos(a) * radius, y, cz + Math.sin(a) * radius];
+    const A = p(a0, -12), B = p(a1, -12), Cc = p(a1, h1), D = p(a0, h0);
+    pos.push(...A, ...B, ...Cc, ...A, ...Cc, ...D);
+    hh.push(0, 0, 1, 0, 1, 1);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({
-    uniforms: { uTop: { value: new THREE.Color() }, uBottom: { value: new THREE.Color() } },
-    vertexShader: 'varying float vY; void main(){ vY = position.y; vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }',
-    fragmentShader: 'uniform vec3 uTop; uniform vec3 uBottom; varying float vY; void main(){ gl_FragColor = vec4(mix(uBottom, uTop, clamp(vY/80.0,0.0,1.0)), 1.0); }',
-    fog: false,
-    depthWrite: false,
-  }));
-  m.frustumCulled = false;
-  m.renderOrder = -5;
-  scene.add(m);
-  return m;
+  geo.setAttribute('aTop', new THREE.Float32BufferAttribute(hh, 1));
+  return geo;
+}
+function mountains(scene) {
+  const mk = (geo, order, near) => {
+    const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+      uniforms: { uTop: { value: new THREE.Color() }, uBottom: { value: new THREE.Color() }, uNear: { value: near } },
+      vertexShader: 'attribute float aTop; varying float vY; varying float vT; void main(){ vY = position.y; vT = aTop; vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = vec4(p.xy, 0.0, p.w); }',
+      fragmentShader: 'uniform vec3 uTop; uniform vec3 uBottom; uniform float uNear; varying float vY; varying float vT; void main(){ float k = clamp(vY/70.0 + 0.1, 0.0, 1.0); vec3 c = mix(uBottom, uTop, k); c *= 1.0 - uNear * 0.16 * (1.0 - k); gl_FragColor = vec4(c, 1.0); }',
+      fog: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }));
+    m.frustumCulled = false;
+    m.renderOrder = order;
+    scene.add(m);
+    return m;
+  };
+  const far = mk(ridgeRing(430, 14, 58, 19), -6, 0);
+  const near = mk(ridgeRing(360, 2, 22, 23), -5, 1);
+  return { far, near, material: far.material, materials: [far.material, near.material] };
 }
 
 /** 屋上の小物：室外機・給水タンク・手すり・物干し */
@@ -316,8 +327,8 @@ export function buildTown(scene, renderer, day) {
     asphalt: gmat(TEX.asphalt, 0xffffff, 0.92),
     lane: gmat(TEX.asphalt, 0xd9d6d2, 0.92),
     walk: gmat(TEX.sidewalk, 0xffffff, 0.9),
-    plaza: gmat(TEX.plaza, 0xffffff, 0.85),
-    arcade: gmat(TEX.plaza, 0xf2e2cc, 0.85),
+    plaza: gmat(TEX.plaza, 0xffffff, 0.8),
+    arcade: gmat(TEX.brick, 0xf6ece0, 0.85),
     stone: gmat(TEX.stone, 0xffffff, 0.9),
     grass: gmat(TEX.grass, 0xffffff, 1),
     lawn: gmat(TEX.grass, 0xe9f5d0, 1),
@@ -573,7 +584,7 @@ export function buildTown(scene, renderer, day) {
   slab(home, null, 8.4, 11.6, -3.4, -1.6, 0.12, M.soil, 1.5, 0);
   for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) ball(home, 0.16, 8.8 + i * 0.8, 0.22, -3 + j * 0.9, [0x5f9a55, 0x7bb35a][j], { seg: 6, seg2: 4 });
   for (let i = 0; i < 4; i++) ball(home, 0.06, 8.85 + i * 0.8, 0.28, -2.95, 0xe85d45, { seg: 6, seg2: 4, cast: false });
-  grassField(home, [[4.8, -6.8, 13.4, 5.4], [-5.9, -6.8, -4.7, 3.4]], 2200, (x, z) => (x > 8.3 && x < 11.7 && z > -3.5 && z < -1.5) || (x < 6.7 && z > -3.3 && z < 1.0), 21);
+  grassField(home, [[4.8, -6.8, 13.4, 5.4], [-5.9, -6.8, -4.7, 3.4]], 5200, (x, z) => (x > 8.3 && x < 11.7 && z > -3.5 && z < -1.5) || (x < 6.7 && z > -3.3 && z < 1.0), 21);
   // 近所の家（西）
   for (const [x, w] of [[-12.8, 10], [-24, 9]]) house(home, x, -0.2, { w, d: 8, floors: 2 });
   // 家の北側
@@ -690,7 +701,7 @@ export function buildTown(scene, renderer, day) {
   const st = D('street');
   ground(st, Z.street.x0, Z.street.x1, Z.street.z0, Z.street.z1, M.arcade, 2.4, 0.008);
   // 中央の色タイルの帯
-  ground(st, 42.4, 43.6, Z.street.z0, Z.street.z1, gmat(TEX.plaza, 0xe9c9a3, 0.85), 1.6, 0.01);
+  ground(st, 42.4, 43.6, Z.street.z0, Z.street.z1, gmat(TEX.brick, 0xd9b48f, 0.85), 1.6, 0.01);
   const shopsW = [
     ['うおまさ', '鮮魚', 'fish', true], ['やおよし', '八百屋', 'veg', false], ['こむぎ堂', 'パン', 'bread', false],
     ['みどり園', 'お茶', 'tea', true], ['ひだまり書店', '本', 'book', false], ['まるや', '駄菓子', 'candy', false], ['はなぞの', '花', 'flower', false],
@@ -877,7 +888,7 @@ export function buildTown(scene, renderer, day) {
     park.add(bed);
     const wg = new THREE.ShapeGeometry(shape, 40);
     wg.rotateX(-Math.PI / 2);
-    const water = new THREE.Mesh(wg, waterMaterial(day));
+    const water = new THREE.Mesh(wg, waterMaterial(day, { ellipse: POND, deep: 0x2e5f5c, shallow: 0x6b8f6e }));
     water.position.set(POND.x, 0.1, POND.z);
     water.renderOrder = 1;
     scene.add(water);
@@ -1016,7 +1027,7 @@ export function buildTown(scene, renderer, day) {
   bush(park, 70, -90, 1.2, 53, true);
   anchors.ballBush = new THREE.Vector3(29.8, 0, -85.2);
   // 草
-  grassField(park, [[26.5, -95.5, 78.5, -50]], 9000, (x, z) => {
+  grassField(park, [[26.5, -95.5, 78.5, -50]], 30000, (x, z) => {
     if (((x - POND.x) / (POND.rx + 1.2)) ** 2 + ((z - POND.z) / (POND.rz + 1.2)) ** 2 < 1) return true;
     if (x > 31 && x < 38 && z > -62.5 && z < -56.5) return true;
     for (let i = 0; i < pathPts.length - 1; i++) {
@@ -1187,8 +1198,8 @@ export function buildTown(scene, renderer, day) {
     const sx = 108, sz = -78.5;
     slab(plaza, col, sx - 1.6, sx + 1.6, sz - 1.6, sz + 1.6, 0.5, M.stone, 1.5, 0.15, 'ped1');
     slab(plaza, col, sx - 0.95, sx + 0.95, sz - 0.95, sz + 0.95, 0.75, M.stone, 1.5, 0.65, 'ped2');
-    const statue = buildDog({ ...breedParams('shiba', ''), fluff: 0.2 });
-    const bronze = new THREE.MeshStandardMaterial({ color: 0x7a5a3a, roughness: 0.35, metalness: 0.75, flatShading: true });
+    const statue = buildDog({ ...breedParams('shiba', ''), fluff: 0.2 }, { shells: false });
+    const bronze = new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.32, metalness: 0.85, envMapIntensity: 1.3 });
     statue.root.traverse((o) => { if (o.isMesh) { o.material = bronze; o.castShadow = true; o.userData.statue = true; } });
     if (statue.blob) statue.blob.visible = false;
     statue.root.scale.setScalar(2.2);
@@ -1455,7 +1466,7 @@ export function buildTown(scene, renderer, day) {
   const petals = new Petals(scene, petalsEmit, 260);
   const tmpC = new THREE.Color();
   return {
-    col, districts, anchors, room, win, pools, petals, signals, clockFaces,
+    col, districts, anchors, room, win, pools, petals, signals, clockFaces, mtn,
     update(dt, t, hour, camPos, focus) {
       for (const d of dynamic) d.update(dt, t);
       if (camPos) {
@@ -1477,6 +1488,7 @@ export function buildTown(scene, renderer, day) {
           if (on !== d.on) { d.on = on; for (const o of d.list) o.visible = on; }
         }
       }
+      if (camPos) updateGrass(camPos);
       petals.update(dt, t);
       pools.set(LIGHTS.factor);
       // 時計塔の針
@@ -1487,9 +1499,13 @@ export function buildTown(scene, renderer, day) {
       }
       // 遠い山の色は空の地平線に合わせる
       const U = day.uniforms;
-      tmpC.copy(U.uHorizon.value).lerp(U.uZenith.value, 0.42);
-      mtn.material.uniforms.uTop.value.copy(tmpC);
-      mtn.material.uniforms.uBottom.value.copy(U.uHorizon.value).lerp(scene.fog.color, 0.6);
+      // 遠いほど空気の色に溶ける（奥の山は霞んで明るく、手前の丘は少しだけ濃い）
+      tmpC.copy(U.uHorizon.value).lerp(U.uZenith.value, 0.2).lerp(scene.fog.color, 0.35);
+      mtn.materials[0].uniforms.uTop.value.copy(tmpC);
+      mtn.materials[0].uniforms.uBottom.value.copy(U.uHorizon.value).lerp(scene.fog.color, 0.6);
+      tmpC.copy(U.uHorizon.value).lerp(U.uZenith.value, 0.32).lerp(scene.fog.color, 0.15);
+      mtn.materials[1].uniforms.uTop.value.copy(tmpC).multiplyScalar(0.94);
+      mtn.materials[1].uniforms.uBottom.value.copy(U.uHorizon.value).lerp(scene.fog.color, 0.45).multiplyScalar(0.97);
     },
   };
 }
