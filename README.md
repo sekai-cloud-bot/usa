@@ -54,7 +54,7 @@ npm run dev                  # http://localhost:5173 を開く
 - もらったバンダナ・花かんむりは次回から身につけて出発
 - いちばん早い到着時刻の記録
 
-時間は 16:00 から進み、18:00 に電車が着きます。遅れても失敗にはならず、夕焼けのまま待っていてくれます。
+時間は 16:30 から進み、18:00 に電車が着きます。遅れても失敗にはならず、夕焼けのまま待っていてくれます。
 
 ## 保存されるもの（localStorage）
 
@@ -77,7 +77,7 @@ npm run dev                  # http://localhost:5173 を開く
 | `src/adv/props.js` `nature.js` | 家・店・電柱・自販機・木・草（風でゆれる）・池・桜吹雪 |
 | `src/adv/actors.js` | 人・ねこ・カラス・ハト・カモ・車・電車・持ち物・きせかえ |
 | `src/adv/player.js` `tpcam.js` `controls.js` | 犬の操作（ジャンプ・段差・塀の上）・三人称カメラ（壁よけ）・入力 |
-| `src/adv/sky.js` `post.js` | 時刻で変わる空・太陽・霧・街の灯り、ポスト処理 |
+| `src/adv/sky.js` `post.js` | 時刻で変わる空・太陽・霧・街の灯り（16:30 → 夕焼け → 夕闇）、ポスト処理 |
 | `src/adv/fx.js` | きらきら・土ぼこり・においの道（1命令で描く粒） |
 | `src/adv/share.js` `save.js` `ui.js` | おむかえ日記の画像・保存・HUD と字幕 |
 | `src/dog.js` `src/dogModel.js` `src/room.js` `src/audio.js` | 犬のモデルと動き、リビング、効果音と BGM（WebAudio で合成） |

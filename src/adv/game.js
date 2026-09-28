@@ -45,9 +45,9 @@ const AREAS = [
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
-const START_HOUR = 16;
+const START_HOUR = 16.5;
 const ARRIVE_HOUR = 18;
-const HOUR_PER_SEC = 1 / 170;   // 2時間 ≒ 5分40秒（夕方の光の中を歩く）
+const HOUR_PER_SEC = 1 / 230;   // 1時間半 ≒ 5分45秒（夕方の光の中を歩く）
 
 export class Game {
   constructor(ctx) {

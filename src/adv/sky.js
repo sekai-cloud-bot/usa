@@ -4,10 +4,10 @@ import { clamp, lerp } from '../util.js';
 
 // 時刻ごとの空と光（13時 → 日没 → 夕闇）
 const KEYS = [
-  { h: 13.0, el: 52, az: 138, sun: '#fff3de', si: 2.9, zen: '#5d9edb', hor: '#cfe4f2', hs: '#e8f1ff', hg: '#bfa07c', hi: 1.15, fog: '#d3e2ea', lamp: 0, cloud: 0.8 },
-  { h: 15.0, el: 38, az: 124, sun: '#ffecd0', si: 2.8, zen: '#679fd6', hor: '#dfe8ea', hs: '#eef1f6', hg: '#c3a17a', hi: 1.1, fog: '#dde5e5', lamp: 0, cloud: 0.8 },
-  { h: 16.5, el: 20, az: 112, sun: '#ffd49a', si: 2.7, zen: '#7894cc', hor: '#f4d5ac', hs: '#f5ead8', hg: '#c49a70', hi: 1.0, fog: '#ecd6bb', lamp: 0.05, cloud: 0.85 },
-  { h: 17.5, el: 8, az: 104, sun: '#ffac6c', si: 2.4, zen: '#6c76b6', hor: '#ffb183', hs: '#f3d4c0', hg: '#b88466', hi: 0.9, fog: '#efbd98', lamp: 0.45, cloud: 0.9 },
+  { h: 13.0, el: 52, az: 138, sun: '#fff3de', si: 2.9, zen: '#3f86d8', hor: '#cfe4f2', hs: '#e8f1ff', hg: '#bfa07c', hi: 1.15, fog: '#d3e2ea', lamp: 0, cloud: 0.8 },
+  { h: 15.0, el: 38, az: 124, sun: '#ffecd0', si: 2.8, zen: '#4a8bd6', hor: '#dbe7ec', hs: '#eef1f6', hg: '#c3a17a', hi: 1.1, fog: '#dde5e5', lamp: 0, cloud: 0.8 },
+  { h: 16.5, el: 20, az: 112, sun: '#ffd49a', si: 2.7, zen: '#5b82c8', hor: '#f4d5ac', hs: '#f5ead8', hg: '#c49a70', hi: 1.0, fog: '#ecd6bb', lamp: 0.05, cloud: 0.85 },
+  { h: 17.5, el: 8, az: 104, sun: '#ffac6c', si: 2.4, zen: '#5b66b0', hor: '#ffb183', hs: '#f3d4c0', hg: '#b88466', hi: 0.9, fog: '#efbd98', lamp: 0.45, cloud: 0.9 },
   { h: 18.0, el: 3, az: 100, sun: '#ff9056', si: 1.7, zen: '#565a9b', hor: '#ff9870', hs: '#e0b8b4', hg: '#9e7162', hi: 0.8, fog: '#e2a087', lamp: 0.85, cloud: 0.9 },
   { h: 18.5, el: -2, az: 97, sun: '#ff7650', si: 0.6, zen: '#393e77', hor: '#cc7a78', hs: '#a894ad', hg: '#6f5660', hi: 0.7, fog: '#94707f', lamp: 1, cloud: 0.7 },
   { h: 19.5, el: -8, az: 94, sun: '#ff6650', si: 0.15, zen: '#1e2350', hor: '#5b4a70', hs: '#6f7aa8', hg: '#3c3a4c', hi: 0.55, fog: '#3d3d5c', lamp: 1, cloud: 0.5 },
@@ -37,7 +37,7 @@ float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a
 void main() {
   vec3 d = normalize(vDir);
   float h = d.y;
-  vec3 col = mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.5));
+  vec3 col = mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.38));
   col = mix(col, uGround, smoothstep(0.0, -0.2, h));
   float s = max(dot(d, uSunDir), 0.0);
   col += uSunColor * (pow(s, 6.0) * 0.22 + pow(s, 48.0) * 0.5);
