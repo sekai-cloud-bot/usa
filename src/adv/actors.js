@@ -732,7 +732,7 @@ export class Train {
     bodyM.onBeforeCompile = (sh) => {
       sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * 0.18;');
     };
-    const winM = LIGHTS.make(0xfff0d0, 0.15, 1.5, 0x3a4658);
+    const winM = LIGHTS.make(0xfff0d0, 0.15, 0.85, 0x3a4658);
     this.group = new THREE.Group();
     for (let i = 0; i < n; i++) {
       const car = new THREE.Group();
@@ -835,13 +835,17 @@ export function makeItem(kind) {
     stem.rotation.x = Math.PI / 2;
     stem.position.z = -0.1;
     g.add(stem);
-    const petals = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.02, 12), m(0xf6c83a, 0.7));
-    petals.rotation.x = Math.PI / 2;
-    petals.position.z = 0.16;
+    // 花は犬の前（くわえた時に正面）を向く
+    const petals = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.02, 12), m(0xf6c83a, 0.7, { emissive: 0xf6c83a, emissiveIntensity: 0.12 }));
+    petals.rotation.z = Math.PI / 2;
+    petals.position.set(-0.02, 0.03, 0.18);
     const c = new THREE.Mesh(cy(0.055, 0.055, 0.03, 10), m(0x6a4330));
-    c.rotation.x = Math.PI / 2;
-    c.position.z = 0.175;
-    g.add(petals, c);
+    c.rotation.z = Math.PI / 2;
+    c.position.set(-0.035, 0.03, 0.18);
+    const leaf = new THREE.Mesh(sph(0.05, 6, 4), m(0x5f9a55));
+    leaf.scale.set(0.3, 0.5, 1.2);
+    leaf.position.set(0, 0.02, 0.02);
+    g.add(petals, c, leaf);
   } else if (kind === 'sakura') {
     const br = new THREE.Mesh(cy(0.012, 0.016, 0.45, 5), m(0x6b4a3e));
     br.rotation.x = Math.PI / 2;

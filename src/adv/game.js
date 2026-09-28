@@ -1093,7 +1093,7 @@ export class Game {
     cam.startCine((c, dt) => {
       t += dt;
       const k = smooth(clamp(t / 7, 0, 1));
-      c.position.set(lerp(121, 122.5, k), lerp(9.6, 8.8, k), lerp(-60, -58, k));
+      c.position.set(lerp(121, 122.5, k), lerp(9.6, 8.8, k), lerp(-67, -65, k));
       look.x = 142;
       look.y = damp(look.y, 11.4, 2, dt);
       look.z = damp(look.z, tr.z - 9, 3, dt);
