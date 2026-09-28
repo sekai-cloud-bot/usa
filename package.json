@@ -1,9 +1,9 @@
 {
-  "name": "uchinoko-orusuban",
+  "name": "eki-made-omukae",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "うちの子、おるすばん中。— Three.js製の犬いたずらゲーム",
+  "description": "駅まで、おむかえ。— おるすばん中の犬が夕方の町をぬけて駅まで飼い主をむかえにいく Three.js 製 3D アドベンチャー",
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",

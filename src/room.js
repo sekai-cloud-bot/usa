@@ -225,7 +225,9 @@ export function makePlant(potColor = 0xf3ece2, leafColor = 0x6fae7c, size = 1, s
   return g;
 }
 
-export function buildRoom(scene, renderer) {
+export function buildRoom(scene, renderer, opts = {}) {
+  // town: 冒険版。手前の床の延長・ゲート・窓の外の書き割り・光の筋・ペットカメラを省く
+  const town = !!opts.town;
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
   const W = ROOM.maxX - ROOM.minX, D = ROOM.maxZ - ROOM.minZ;
   const colliders = [];
@@ -233,7 +235,7 @@ export function buildRoom(scene, renderer) {
   scene.add(room);
 
   // 床（手前はカメラに映る範囲まで続けて、部屋の端が見えないように）
-  const FRONT = 3.5;
+  const FRONT = town ? 0 : 3.5;
   const floorMat = std(0xffffff, 0.62, { map: floorTexture(maxAniso) });
   floorMat.map.repeat.set(3.2, 2.5 * (D + FRONT) / D);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D + FRONT), floorMat);
@@ -246,7 +248,7 @@ export function buildRoom(scene, renderer) {
   room.add(slab);
 
   // 手前の境界：左はキッチンへのペットゲート、右は低いテレビ台
-  {
+  if (!town) {
     const tile = new THREE.Mesh(new THREE.PlaneGeometry(5.8, 3.4), std(0xf2e8dc, 0.8));
     tile.rotation.x = -Math.PI / 2;
     tile.position.set(-1.6, 0.003, ROOM.maxZ + 1.75);
@@ -327,12 +329,12 @@ export function buildRoom(scene, renderer) {
   const garden = new THREE.Mesh(new THREE.PlaneGeometry(9, 4.5), new THREE.MeshBasicMaterial({ map: gardenTexture() }));
   garden.position.set(wx + 2.2, 1.6, (wz0 + wz1) / 2);
   garden.rotation.y = -Math.PI / 2;
-  room.add(garden);
+  if (!town) room.add(garden);
   const deck = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 5), std(0xdcae7a, 0.9));
   deck.rotation.x = -Math.PI / 2;
   deck.position.set(wx + 1.1, 0.0, (wz0 + wz1) / 2);
   deck.receiveShadow = true;
-  room.add(deck);
+  if (!town) room.add(deck);
 
   // カーテン（レース）
   const curtainMat = std(0xfff6e8, 0.9, { transparent: true, opacity: 0.88, side: THREE.DoubleSide });
@@ -360,7 +362,7 @@ export function buildRoom(scene, renderer) {
   const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
   const shaftQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
   const shaftGeos = [];
-  for (const [z, y, w] of [[-2.5, 1.95, 0.55], [-1.65, 2.05, 0.75], [-0.8, 1.85, 0.6], [0.05, 2.0, 0.7], [-1.2, 1.2, 0.4]]) {
+  if (!town) for (const [z, y, w] of [[-2.5, 1.95, 0.55], [-1.65, 2.05, 0.75], [-0.8, 1.85, 0.6], [0.05, 2.0, 0.7], [-1.2, 1.2, 0.4]]) {
     const len = y / SUN_DIR.y;
     // 窓から床へ伸ばす
     const center = new THREE.Vector3(wx - 0.1, y, z).addScaledVector(SUN_DIR, -len / 2);
@@ -368,7 +370,7 @@ export function buildRoom(scene, renderer) {
     g.applyMatrix4(new THREE.Matrix4().compose(center, shaftQ, new THREE.Vector3(1, 1, 1)));
     shaftGeos.push(g);
   }
-  {
+  if (!town) {
     // UV付きで1つのジオメトリに
     const pos = [], uv = [];
     for (const g of shaftGeos) {
@@ -631,7 +633,7 @@ export function buildRoom(scene, renderer) {
   room.add(motePts);
 
   // みまもりカメラ本体
-  const devices = CAM_SPOTS.map((c) => {
+  const devices = town ? [] : CAM_SPOTS.map((c) => {
     const d = petcamDevice(c.stand);
     d.position.copy(c.pos);
     d.rotation.y = Math.PI - c.yaw0;

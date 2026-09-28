@@ -52,6 +52,10 @@ export class Dog {
     this.barkT = 0;
     this.reach = 0;      // ジャンプキャッチの前足
     this.sniff = 0;      // くんくん
+    this.digging = false; // 穴ほり（冒険版）
+    this.dig = 0;
+    this.air = 0;         // 空中姿勢（冒険版のジャンプ）
+    this.extraPitch = 0;
     this.mouthWorld = new THREE.Vector3();
     this.headWorld = new THREE.Vector3();
     this.headDir = new THREE.Vector3();
@@ -73,8 +77,8 @@ export class Dog {
     this.syncRoot();
   }
 
-  place(x, z, heading) {
-    this.pos.set(x, 0, z);
+  place(x, z, heading, y = 0) {
+    this.pos.set(x, y, z);
     this.vel.set(0, 0, 0);
     this.heading = heading;
     this.dashT = 0;
@@ -187,6 +191,7 @@ export class Dog {
     this.squash = damp(this.squash, 0, 8, dt);
     this.tilt = damp(this.tilt, this.tiltTarget, 6, dt);
     this.sniff = Math.max(0, this.sniff - dt);
+    this.dig = damp(this.dig, this.digging ? 1 : 0, 12, dt);
     if (this.surprise > 0) this.surprise -= dt;
     if (this.barkT > 0) this.barkT -= dt;
     let yawn = 0;
@@ -222,7 +227,8 @@ export class Dog {
     body.position.y = y;
     body.position.z = -sit * 0.03;
     const gallop = dash ? Math.sin(g) * 0.14 : 0;
-    body.rotation.x = -0.45 * sit + gallop + lie * 0.05 + bow * 0.36 - this.reach * 0.35;
+    body.rotation.x = -0.45 * sit + gallop + lie * 0.05 + bow * 0.36 - this.reach * 0.35 + this.dig * 0.32 + this.extraPitch;
+    body.position.y -= this.dig * 0.03;
     body.rotation.y = bow * Math.sin(this.t * 13) * 0.14;
     body.rotation.z = Math.sin(g) * 0.05 * amp + Math.sin(this.t * 34) * 0.05 * this.shake
       + belly * (Math.PI * 0.9 + Math.sin(this.t * 1.8) * 0.1);
@@ -246,6 +252,17 @@ export class Dog {
     FR.rotation.x = fr * (1 - w) + frontP - this.reach * 1.2 + belly * 0.3;
     BL.rotation.x = bl * (1 - w) + hindP;
     BR.rotation.x = br * (1 - w) + hindP - belly * 0.2;
+    if (this.dig > 0.01) {
+      const k = this.t * 24;
+      FL.rotation.x += this.dig * (Math.sin(k) * 0.85 - 0.7);
+      FR.rotation.x += this.dig * (Math.sin(k + Math.PI) * 0.85 - 0.7);
+      BL.rotation.x += this.dig * 0.25;
+      BR.rotation.x += this.dig * 0.25;
+    }
+    if (this.air > 0.01) {
+      FL.rotation.x -= this.air * 0.95; FR.rotation.x -= this.air * 0.8;
+      BL.rotation.x += this.air * 0.85; BR.rotation.x += this.air * 0.7;
+    }
     FL.rotation.z = -0.15 * this.shake - belly * 0.3;
     FR.rotation.z = 0.15 * this.shake + belly * 0.3;
 
@@ -272,12 +289,12 @@ export class Dog {
     const barkUp = this.barkT > 0 ? -0.25 * Math.sin((this.barkT / 0.28) * Math.PI) : 0;
     head.rotation.y = this.lookYaw + shakeYaw;
     head.rotation.x = this.lookPitch + chewNod + sniffNod + Math.sin(g) * 0.05 * amp + lie * 0.25 + sit * 0.3
-      - (this.dashT > 0 ? 0.1 : 0) - yawn * 0.5 + barkUp + bow * 0.12 - this.reach * 0.4;
+      - (this.dashT > 0 ? 0.1 : 0) - yawn * 0.5 + barkUp + bow * 0.12 - this.reach * 0.4 + this.dig * 0.35;
     head.rotation.z = this.tilt + Math.sin(this.t * 30) * 0.2 * this.shake;
     rig.neck.position.y = d.bodyR * 0.5 - lie * 0.04;
 
     // しっぽ
-    const wagSpeed = 7 + this.excite * 13 + sp * 2 + bow * 10;
+    const wagSpeed = 7 + this.excite * 13 + sp * 2 + bow * 10 + this.dig * 8;
     const wagAmp = 0.3 + this.excite * 0.45 + bow * 0.2;
     rig.tail.rotation.y = Math.sin(this.t * wagSpeed) * wagAmp;
     rig.tail.rotation.x = (this.expr === 'guilty' ? 0.6 : -0.1) - dash * 0.5 + lie * 0.4 - bow * 0.4;
@@ -337,12 +354,12 @@ export class Dog {
     rig.head.getWorldPosition(this.headWorld);
     rig.head.getWorldDirection(this.headDir);
     const f = this.fwd;
-    this.front.set(this.pos.x + f.x * (0.3 + d.bodyLen * 0.25), 0, this.pos.z + f.z * (0.3 + d.bodyLen * 0.25));
+    this.front.set(this.pos.x + f.x * (0.3 + d.bodyLen * 0.25), this.pos.y, this.pos.z + f.z * (0.3 + d.bodyLen * 0.25));
   }
 
   syncRoot() {
     if (!this.rig) return;
-    this.rig.root.position.set(this.pos.x, 0, this.pos.z);
+    this.rig.root.position.set(this.pos.x, this.pos.y, this.pos.z);
     this.rig.root.rotation.y = this.heading;
     const b = this.rig.blob;
     if (b) b.material.opacity = 0.22 * (1 - Math.min(0.6, this.hopY * 3));

@@ -3,185 +3,152 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#f3dcc0">
-<meta name="description" content="昼休みにペットカメラをのぞいて、留守番中のうちの子の決定的瞬間を撮るゲーム。">
-<title>うちの子、おるすばん中。</title>
+<meta name="theme-color" content="#f0b98a">
+<meta name="description" content="おるすばん中の犬が、夕方の町をぬけて駅まで飼い主をむかえにいく3Dアドベンチャー。">
+<title>駅まで、おむかえ。</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" media="print" onload="this.media='all'">
-<link rel="stylesheet" href="/src/style.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&family=Kiwi+Maru:wght@400;500&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="/src/adv/adv.css">
 </head>
 <body>
 <div id="app">
-  <canvas id="c" aria-label="ペットカメラの映像"></canvas>
+  <canvas id="c" aria-label="ゲーム画面"></canvas>
+
+  <div id="bubbles" class="bubbles"></div>
+
+  <!-- プレイ中の表示 -->
+  <div id="hud" class="hud off">
+    <div class="clock-pill">
+      <i class="sun"></i>
+      <div class="clock-main"><b id="clock-text">15:00</b><span id="clock-left">あと3時間</span></div>
+      <div class="clock-bar"><div id="clock-fill"></div><i class="train-ico"></i></div>
+    </div>
+    <div id="objective" class="objective"><i class="obj-dot"></i><span id="objective-text"></span></div>
+    <div class="hud-right">
+      <div id="friends-pill" class="pill friends"><i class="paw"></i>ともだち <b id="friends-n">0</b></div>
+      <button id="btn-pause" class="round" aria-label="一時停止"><i class="pause-ico"></i></button>
+    </div>
+    <div id="carry" class="carry"><i class="mouth"></i>くわえている：<b id="carry-label"></b></div>
+    <div id="prompt" class="prompt"><kbd>E</kbd><span id="prompt-label"></span></div>
+    <div id="toasts" class="toasts"></div>
+    <div id="hint" class="hint"></div>
+    <div id="keys" class="keys">
+      <span><kbd>WASD</kbd>移動</span><span><kbd>Shift</kbd>走る</span><span><kbd>Space</kbd>ジャンプ</span>
+      <span><kbd>E</kbd>アクション</span><span><kbd>F</kbd>長押し くんくん</span><span><kbd>Q</kbd>ほえる</span><span><kbd>C</kbd>おすわり</span>
+    </div>
+
+    <!-- スマホの操作 -->
+    <div id="stick" class="stick"><div id="stick-knob" class="knob"></div></div>
+    <div class="pad">
+      <button class="pbtn sniff" data-btn="sniff" aria-label="くんくん"><i class="i-nose"></i><span>くんくん</span></button>
+      <button class="pbtn bark" data-btn="bark" aria-label="ほえる"><i class="i-bark"></i><span>ワン</span></button>
+      <button class="pbtn sit" data-btn="sit" aria-label="おすわり"><i class="i-sit"></i><span>おすわり</span></button>
+      <button id="btn-action" class="pbtn action" data-btn="action" aria-label="アクション"><span id="action-label">…</span></button>
+      <button class="pbtn jump" data-btn="jump" aria-label="ジャンプ"><i class="i-jump"></i><span>ジャンプ</span></button>
+      <div id="dig-ring" class="dig-ring"></div>
+    </div>
+  </div>
+
+  <div class="letterbox top"></div><div class="letterbox bottom"></div>
+  <div id="caption" class="caption"></div>
+  <div id="area-card" class="area-card"><div class="ac-line"></div><div id="ac-name" class="ac-name"></div><div id="ac-sub" class="ac-sub"></div><div class="ac-line"></div></div>
+  <div id="title-card" class="title-card"><div id="tc-main" class="tc-main"></div><div id="tc-sub" class="tc-sub"></div></div>
+  <div id="friend-card" class="friend-card">
+    <div class="fc-head"><i id="fc-dot" class="fc-dot"></i><div><div class="fc-kicker">ともだちになった <em id="fc-new">NEW</em></div><div id="fc-name" class="fc-name"></div></div></div>
+    <div id="fc-line" class="fc-line"></div>
+    <div id="fc-count" class="fc-count"></div>
+  </div>
+  <div id="flash" class="flash"></div>
+  <div id="fade" class="fade"></div>
 
   <div id="loading" class="loading">
     <div class="loading-paw"></div>
-    <div>おへやを準備中…</div>
+    <div id="loading-text">町を準備中…</div>
   </div>
-
-  <!-- ペットカメラの画面 -->
-  <div id="hud" class="hud hidden">
-    <div class="vignette"></div>
-    <div id="frame" class="frame"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><i class="reticle"></i></div>
-
-    <div class="cam-top">
-      <div class="rec"><span class="rec-dot"></span>LIVE</div>
-      <div id="cam-name" class="cam-name">リビング</div>
-      <div class="cam-clock"><span id="clock-text">12:00</span><div class="clock-bar"><div id="clock-fill"></div></div></div>
-    </div>
-
-    <div class="cam-right">
-      <div class="film"><i class="ico-cam"></i>のこり <b id="film">12</b>枚</div>
-      <button id="btn-end" class="end-btn">おわる</button>
-      <button id="btn-pause" class="round-btn" aria-label="一時停止"><i class="ico-pause"></i></button>
-    </div>
-
-    <div class="dog-status">
-      <img id="avatar" class="avatar" alt="">
-      <div class="dog-status-text">
-        <div id="hud-name" class="hud-name">うさ</div>
-        <div id="hud-status" class="hud-status">のんびり中</div>
-      </div>
-    </div>
-    <div id="damage" class="damage">被害 ¥0</div>
-
-    <div id="alerts" class="alerts"></div>
-    <div id="banner" class="banner"></div>
-    <div id="speech" class="speech"></div>
-    <div id="toast" class="toast"></div>
-    <div id="hint" class="hint"></div>
-
-    <div id="strip" class="strip"></div>
-    <div id="shotcard" class="shotcard">
-      <img id="shot-img" alt="">
-      <div class="shot-info"><div id="shot-stars" class="stars"></div><div id="shot-name" class="shot-name"></div><div id="shot-pts" class="shot-pts"></div></div>
-    </div>
-
-    <div class="gadgets">
-      <button id="g-treat" class="gadget" aria-label="おやつ"><i class="ico-treat"></i><span>おやつ</span><b id="treat-count" class="badge">5</b></button>
-      <button id="g-call" class="gadget" aria-label="よぶ"><i class="ico-call"></i><span>よぶ</span></button>
-      <button id="g-laser" class="gadget" aria-label="レーザー"><i class="ico-laser"></i><span>レーザー</span><i class="battery"><i id="laser-bat"></i></i></button>
-      <button id="g-find" class="gadget" aria-label="さがす"><i class="ico-find"></i><span>さがす</span></button>
-      <button id="g-switch" class="gadget" aria-label="カメラ切替"><i class="ico-switch"></i><span>カメラ</span></button>
-    </div>
-
-    <div class="zoombar">
-      <button id="zoom-in" class="zbtn" aria-label="ズームイン">＋</button>
-      <div class="ztrack"><div id="zoom-fill" class="zfill"></div></div>
-      <button id="zoom-out" class="zbtn" aria-label="ズームアウト">－</button>
-      <div id="zoom-val" class="zval">1.0×</div>
-    </div>
-    <button id="btn-shutter" class="shutter" aria-label="シャッター"><i></i></button>
-
-    <div id="flash" class="flash"></div>
-    <div id="static" class="static"></div>
-  </div>
-
-  <div id="popups" class="popups"></div>
 
   <!-- タイトル -->
-  <div id="screen-title" class="screen title-screen hidden">
-    <div class="title-card">
-      <h1 class="logo"><span class="logo-a">うちの子、</span><span class="logo-b">おるすばん中。</span></h1>
-      <p class="tagline">昼休みに、みまもりカメラでのぞいてみよう。<br>うちの子の「決定的瞬間」を撮るゲームです。</p>
-      <button id="btn-start" class="cta">みまもりスタート</button>
-      <div class="title-row">
-        <button id="btn-custom" class="sub">うちの子をえらぶ</button>
-        <button id="btn-collection" class="sub">アルバム <b id="collection-count"></b></button>
+  <div id="screen-title" class="screen title hidden">
+    <div class="title-wrap">
+      <div class="logo">
+        <div class="logo-kicker">おるすばん中の、ちいさな大冒険</div>
+        <h1>駅まで、<br>おむかえ。</h1>
       </div>
-      <div id="title-best" class="title-best"></div>
+      <div class="title-actions">
+        <button id="btn-start" class="cta">おむかえに行く</button>
+        <div class="row">
+          <button id="btn-custom" class="sub">うちの子をえらぶ</button>
+          <button id="btn-sound" class="sub">おと：<b id="sound-state">ON</b></button>
+        </div>
+        <div id="title-stats" class="title-stats"></div>
+      </div>
     </div>
+    <div class="title-foot">音が出ます ／ スマホは横向きがおすすめ</div>
   </div>
 
-  <!-- うちの子エディタ -->
-  <div id="screen-custom" class="screen custom-screen hidden">
-    <div class="custom-head">
-      <div class="custom-title">うちの子をえらぶ</div>
-      <div class="custom-sub">見た目と性格で、留守番中の過ごし方が変わります</div>
-    </div>
-    <div class="custom-sheet">
-      <label class="field">
-        <span>なまえ</span>
-        <input id="in-name" type="text" maxlength="10" placeholder="うさ" autocomplete="off">
-      </label>
+  <!-- うちの子 -->
+  <div id="screen-custom" class="screen sheet hidden">
+    <div class="sheet-card">
+      <div class="sheet-title">うちの子をえらぶ</div>
+      <label class="field"><span>なまえ</span><input id="in-name" type="text" maxlength="8" placeholder="うさ" autocomplete="off"></label>
       <div class="field"><span>犬種</span><div id="opt-breed" class="chips"></div></div>
-      <div class="field"><span>性格</span><div id="opt-pers" class="chips"></div></div>
       <div class="field"><span>毛の色</span><div id="opt-color" class="swatches"></div></div>
-      <div class="field"><span>耳</span><div id="opt-ear" class="chips"></div></div>
-      <div class="field"><span>しっぽ</span><div id="opt-tail" class="chips"></div></div>
       <div class="field"><span>もこもこ</span><input id="in-fluff" type="range" min="0" max="100" step="1"></div>
-      <div class="field"><span>からだ</span><div id="opt-body" class="chips"></div></div>
-      <button id="btn-custom-ok" class="cta">この子をみまもる</button>
-    </div>
-  </div>
-
-  <!-- 昼休みのアルバム -->
-  <div id="screen-album" class="screen album-screen hidden">
-    <div class="album">
-      <div class="album-title"><i class="ico-paw"></i><span id="al-title">うさの昼休みアルバム</span><i class="ico-paw"></i></div>
-      <div id="al-sub" class="album-sub"></div>
-      <div class="al-cover">
-        <img id="al-cover-img" alt="">
-        <div class="al-cover-tag"><span id="al-cover-stars" class="stars"></span><span id="al-cover-name"></span></div>
-        <div id="al-cover-cap" class="al-cover-cap"></div>
-      </div>
-      <div class="al-hint">写真をタップすると表紙を変えられます</div>
-      <div id="al-grid" class="al-grid"></div>
-      <div id="al-new" class="al-new"></div>
-      <div id="al-next" class="report-next"></div>
-      <div id="al-meta" class="al-meta"></div>
-      <div class="report-actions">
-        <button id="btn-again" class="cta">もう一回みまもる</button>
-        <div class="title-row">
-          <button id="btn-share" class="sub">表紙をシェア</button>
-          <button id="btn-save" class="sub">画像を保存</button>
-        </div>
-        <div class="title-row">
-          <button id="btn-al-custom" class="sub ghost">うちの子をかえる</button>
-          <button id="btn-al-title" class="sub ghost">タイトルへ</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- コレクション -->
-  <div id="screen-collection" class="screen zukan-screen hidden">
-    <div class="zukan">
-      <div class="zukan-title">うちの子アルバム <b id="col-count"></b></div>
-      <div id="col-list" class="collection-list"></div>
-      <button id="btn-collection-close" class="cta">とじる</button>
+      <button id="btn-custom-ok" class="cta">この子で行く</button>
     </div>
   </div>
 
   <!-- 一時停止 -->
-  <div id="screen-pause" class="screen pause-screen hidden">
-    <div class="pause-card">
-      <div class="pause-title">ひとやすみ</div>
+  <div id="screen-pause" class="screen sheet hidden">
+    <div class="sheet-card narrow">
+      <div class="sheet-title">ひとやすみ</div>
       <button id="btn-resume" class="cta">つづける</button>
-      <button id="btn-restart" class="sub">さいしょから</button>
-      <button id="btn-sound" class="sub">おと：<b id="sound-state">ON</b></button>
+      <button id="btn-sound2" class="sub">おと：<b id="sound-state2">ON</b></button>
       <button id="btn-quality" class="sub">画質：<b id="quality-state">自動</b></button>
+      <button id="btn-restart" class="sub">さいしょから</button>
       <button id="btn-quit" class="sub ghost">タイトルへ</button>
-      <div class="pause-help">
-        <div><b>PC</b> ドラッグ・矢印キーで向き ／ ホイール・Q/E でズーム ／ Space シャッター ／ 1 おやつ・2 よぶ・3 レーザー ／ F さがす ／ C カメラ切替</div>
-        <div><b>スマホ</b> なぞって向き ／ 2本指でズーム ／ 右下のシャッター</div>
+      <div class="help">
+        <div><b>PC</b> WASD/矢印 移動 ・ Shift 走る ・ Space ジャンプ ・ E アクション ・ F長押し くんくん ・ Q ほえる ・ C おすわり ・ ドラッグ/ホイール カメラ</div>
+        <div><b>スマホ</b> 左をなぞって移動（大きく倒すと走る）・右をなぞってカメラ・右下のボタン</div>
       </div>
     </div>
   </div>
 
-  <!-- 共有プレビュー -->
-  <div id="share-modal" class="screen share-modal hidden">
-    <div class="share-card">
-      <img id="share-img" alt="共有用の画像">
-      <div class="share-note" id="share-note">画像を長押しで保存できます</div>
-      <div class="title-row">
-        <a id="share-dl" class="sub" download="uchinoko.png">ダウンロード</a>
+  <!-- 結果 -->
+  <div id="screen-result" class="screen result hidden">
+    <div class="result-card">
+      <div class="r-kicker">おむかえ日記</div>
+      <div id="r-title" class="r-title"></div>
+      <div class="r-photo"><img id="r-photo" alt="再会の写真"><div id="r-time" class="r-time"></div></div>
+      <div class="r-grid">
+        <div class="r-cell"><span>おみやげ</span><b id="r-gift"></b></div>
+        <div class="r-cell"><span>ともだち</span><b id="r-friends"></b></div>
+        <div class="r-cell"><span>到着</span><b id="r-arrive"></b></div>
+      </div>
+      <div id="r-stamps" class="r-stamps"></div>
+      <div id="r-next" class="r-next"></div>
+      <div class="r-actions">
+        <button id="btn-share" class="cta">日記をシェア</button>
+        <div class="row">
+          <button id="btn-save" class="sub">画像を保存</button>
+          <button id="btn-again" class="sub">もういちど</button>
+        </div>
+        <button id="btn-title" class="sub ghost">タイトルへ</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="share-modal" class="screen sheet hidden">
+    <div class="sheet-card">
+      <img id="share-img" class="share-img" alt="共有用の画像">
+      <div id="share-note" class="help"></div>
+      <div class="row">
+        <a id="share-dl" class="sub" download="omukae.png">ダウンロード</a>
         <button id="btn-share-close" class="sub ghost">とじる</button>
       </div>
     </div>
   </div>
 </div>
-<script type="module" src="/src/main.js"></script>
+<script type="module" src="/src/adv/main.js"></script>
 </body>
 </html>
