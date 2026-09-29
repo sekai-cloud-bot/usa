@@ -357,7 +357,7 @@ export class Dog {
     rig.tongue.visible = mouthAmt > 0.18 && !this.held;
     if (rig.tongue.userData.baseY === undefined) rig.tongue.userData.baseY = rig.tongue.position.y;
     rig.tongue.position.y = rig.tongue.userData.baseY + (1 - mouthAmt) * d.headR * 0.05;
-    for (const b of rig.blush) b.material.opacity = 0.3 + this.sparkle * 0.35;
+    for (const b of rig.blush) b.material.opacity = 0.26 + this.sparkle * 0.34;
 
     this.syncRoot();
     rig.root.updateMatrixWorld(true);

@@ -172,16 +172,15 @@ export function buildRiver(ctx) {
   col.addBox(R.x0 - 1, R.x0, -166, R.walkS, -6, 12, 'thin');
   col.addBox(R.x1, R.x1 + 1, -166, R.walkS, -6, 12, 'thin');
   // 草（斜面と河川敷）と葦
-  grassField(g, [[R.x0, R.slope - 0.3, R.x1, R.flat], [R.x0, R.flat, R.x1, R.beach + 0.5]], 16000, (x, z) => (z < -120.3 && z > -122.8) || (x > 12 && x < 36 && z < -121 && z > -131), 71, 0.01, riverY);
+  grassField(g, [[R.x0, R.slope - 0.3, R.x1, R.flat], [R.x0, R.flat, R.x1, R.beach + 0.5]], 16800, (x, z) => x > 12 && x < 36 && z < -121 && z > -131, 71, 0.01, riverY);
   reeds(g, [[R.x0, R.beach + 0.8, R.x1, R.shallow + 0.4], [R.x0, R.farBeach - 0.3, R.x1, R.farFlat - 0.2]], 2600, riverY, 5);
 
-  // 土手の上の遊歩道と、河川敷の道
+  // 土手の上の遊歩道（河川敷は一面の草）
   ground(g, R.x0, 79, R.slope, R.top, M.lane, 5, 0.012);
   ground(g, 95, R.x1, R.slope, R.top, M.lane, 5, 0.012);
   ground(g, R.x0, R.x1, R.top, R.walkS, gmat(TEX.grass, 0xd9e8c4, 1), 5, 0.006);
   paint(g, R.x0, R.slope + 0.25, 79, R.slope + 0.25, 0.1, 0xe8e4da);
   paint(g, 95, R.slope + 0.25, R.x1, R.slope + 0.25, 0.1, 0xe8e4da);
-  ground(g, R.x0, R.x1, -122.6, -120.4, gmat(TEX.asphalt, 0xc9c4bc, 0.92), 5, R.flatY + 0.012);
 
   // 遊歩道の南は塀（家の庭へは入れない）。公園と駅前からの路地だけあいている
   const wallSeg = (x0, x1) => {
@@ -296,8 +295,12 @@ export function buildRiver(ctx) {
   // 車の橋（ひだまり橋）
   {
     const cM = gmat(TEX.concrete, 0xd6d0c4, 0.85);
-    tbox(g, 80.4, 93.6, -1.4, -0.02, -164, R.slope + 1, cM, 3);
-    col.addBox(80.4, 93.6, -164, R.slope + 1, -1.4, 0.3, 'bridge');
+    // 橋げたは うすく（河川敷から 2m ほど上。橋の下で座っている人の頭が つかえない）
+    const deckY = -0.62;
+    tbox(g, 80.4, 93.6, deckY, -0.02, -164, R.slope + 1, cM, 3);
+    col.addBox(80.4, 93.6, -164, R.slope + 1, deckY, 0.3, 'bridge');
+    // 両はしの桁（横から見て橋らしく）
+    for (const x of [80.75, 93.25]) tbox(g, x - 0.35, x + 0.35, deckY - 0.28, deckY, -163, R.slope, cM, 2);
     // 欄干
     for (const x of [80.7, 93.3]) {
       tbox(g, x - 0.18, x + 0.18, 0.15, 0.95, -163.5, R.slope + 0.5, cM, 2);
@@ -309,9 +312,9 @@ export function buildRiver(ctx) {
     signBoard(g, 'ひだまりばし', 80.49, 0.62, R.slope - 0.6, 0.9, 0.24, -Math.PI / 2, { bg: '#6b5a3e', fg: '#f6e6c6', size: 60 });
     // 橋脚
     for (const z of [-128, -151]) {
-      tbox(g, 81.5, 92.5, R.bedY, -1.4, z - 0.8, z + 0.8, cM, 2);
-      for (const x of [81.5, 92.5]) cyl(g, 0.8, 0.8, -1.4 - R.bedY, x, R.bedY, z, cM, 16);
-      col.addBox(81, 93, z - 0.9, z + 0.9, R.bedY, -1.4, 'pier');
+      tbox(g, 81.5, 92.5, R.bedY, deckY, z - 0.8, z + 0.8, cM, 2);
+      for (const x of [81.5, 92.5]) cyl(g, 0.8, 0.8, deckY - R.bedY, x, R.bedY, z, cM, 16);
+      col.addBox(81, 93, z - 0.9, z + 0.9, R.bedY, deckY, 'pier');
     }
     for (const z of [-122, -156]) {
       streetLamp(g, 80.2, z, Math.PI / 2, 5.0);
@@ -629,7 +632,7 @@ export function buildShrine(ctx) {
       const x = -62.5;
       tbox(g, x - 0.6, x + 0.6, Y, Y + 0.9, z - 0.6, z + 0.6, stoneM, 1.5);
       col.addBox(x - 0.6, x + 0.6, z - 0.6, z + 0.6, Y, Y + 0.9, 'komainu');
-      const d = buildDog(typeParams('sura', '', { fluff: 0.5, ear: 'pin', tail: 'plume', pattern: 'solid' }), { shells: false });
+      const d = buildDog(typeParams('sura', '', { fluff: 0.5, ear: 'pin', tail: 'plume', pattern: 'solid' }), { shells: false, res: 1.5 });
       d.root.traverse((o) => { if (o.isMesh) { o.material = stone; o.castShadow = true; } });
       if (d.blob) d.blob.visible = false;
       d.mouthOpen.visible = false;

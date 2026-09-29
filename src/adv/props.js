@@ -136,7 +136,7 @@ export function makeHouse({ w = 7, d = 7, floors = 2, wall = pickR(WALLS), roof 
 export function acUnit(g, x, y, z, ry = 0) {
   const a = new THREE.Group();
   box(a, 0.8, 0.55, 0.3, 0, 0, 0, 0xeeeeea, { round: 0.03 });
-  cyl(a, 0.19, 0.19, 0.02, 0.12, 0.27, 0.16, 0x9a9a98, 16, { rx: Math.PI / 2, cast: false });
+  cyl(a, 0.19, 0.19, 0.02, 0.12, 0.27, 0.16, 0x9a9a98, 16, { rx: Math.PI / 2, cast: false }).position.y = 0.27;
   a.position.set(x, y, z);
   a.rotation.y = ry;
   g.add(a);

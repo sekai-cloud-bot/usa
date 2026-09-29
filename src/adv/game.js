@@ -266,12 +266,15 @@ export class Game {
     w.name = 'wear-' + kind;
     const d = rig.dims;
     if (kind === 'bandana' || kind === 'bell') {
-      w.position.set(0, d.bodyR * (kind === 'bell' ? 0.3 : 0.55), d.bodyLen * 0.3 + (kind === 'bell' ? d.bodyR * 0.55 : 0));
-      w.scale.setScalar(0.9 + d.bodyR * 1.2);
+      // 首のつけ根に（首輪の輪の半径は 0.14）
+      const c = d.collar;
+      w.position.set(0, c.y - (kind === 'bell' ? c.r * 0.1 : 0), c.z);
+      w.scale.setScalar(c.r / 0.14);
       rig.body.add(w);
     } else {
-      w.position.set(0, d.headR * 0.95, -0.02);
-      w.scale.setScalar(0.7 + d.headR * 1.4);
+      // 頭の上に（花かんむりの輪の半径は 0.12）
+      w.position.set(0, d.crown.y, d.crown.z);
+      w.scale.setScalar(d.crown.r / 0.12);
       rig.head.add(w);
     }
     if (!silent) this.sparkle(this.player.pos.clone().add(V(0, 0.6, 0)), 20, 0xfff0c0, 2);

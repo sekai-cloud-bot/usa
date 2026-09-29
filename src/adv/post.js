@@ -156,13 +156,22 @@ export class Post {
       this.gtao.blendIntensity = 0.8;
       this.gtao.updateGtaoMaterial({ radius: 0.8, distanceExponent: 1.4, thickness: 1.2, scale: 1.0, distanceFallOff: 1.0 });
       this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
-      // 空や遠くの山は、遮蔽の計算用の描画では描かない（遠い平面で切れて黒い影になる）
+      // 空や遠くの山は、遮蔽の計算用の描画では描かない（遠い平面で切れて黒い影になる）。
+      // 目じるしのピン（スプライト）や光の柱・丸影など、奥行きを書かない半透明の物も入れない
+      // （法線の描画ではスプライトが画面を向かない四角になり、その形の黒い影が出る）
       const orig = this.gtao.render.bind(this.gtao);
+      const hidden = [];
+      const skip = (o) => {
+        if (!o.visible) return;
+        const m = o.material;
+        if (o.isSprite || (m && !Array.isArray(m) && m.transparent && !m.depthWrite)) { o.visible = false; hidden.push(o); }
+      };
       this.gtao.render = (...args) => {
-        const vis = this.noAO.map((o) => o.visible);
-        for (const o of this.noAO) o.visible = false;
+        for (const o of this.noAO) if (o.visible) { o.visible = false; hidden.push(o); }
+        this.scene.traverseVisible(skip);
         orig(...args);
-        this.noAO.forEach((o, i) => { o.visible = vis[i]; });
+        for (const o of hidden) o.visible = true;
+        hidden.length = 0;
       };
       this.composer.addPass(this.gtao);
     }

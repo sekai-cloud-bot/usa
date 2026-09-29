@@ -554,7 +554,7 @@ export function buildTown(scene, renderer, day) {
   {
     const x0 = 6.8, x1 = 10.6, z = -5.8;
     for (const x of [x0, x1]) { cyl(home, 0.04, 0.04, 1.9, x, 0, z, 0xd0d0cc, 8); col.addCircle(x, z, 0.08, 0, 2, 'pole'); }
-    cyl(home, 0.02, 0.02, x1 - x0, (x0 + x1) / 2, 1.8, z, 0xd0d0cc, 6, { rz: Math.PI / 2 });
+    cyl(home, 0.02, 0.02, x1 - x0, (x0 + x1) / 2, 1.8 - (x1 - x0) / 2, z, 0xd0d0cc, 6, { rz: Math.PI / 2 });
     const laundry = new THREE.Group();
     const cols = [0xffffff, 0x9fcfe8, 0xf7c9c0, 0xfff1b8];
     for (let i = 0; i < 5; i++) {
@@ -966,7 +966,8 @@ export function buildTown(scene, renderer, day) {
       p.rotation.z = s * 0.12;
       col.addCircle(bx + s * 1.6, bz, 0.1, 0, 2.4, 'pole');
     }
-    cyl(park, 0.05, 0.05, 3.4, bx, 2.35, bz, 0x3f8f6a, 8, { rz: Math.PI / 2 });
+    // 横棒（cyl は下端の高さを受けとるので、横にするときは長さの半分だけ下げる）
+    cyl(park, 0.055, 0.055, 3.4, bx, 2.37 - 1.7, bz, 0x3f8f6a, 8, { rz: Math.PI / 2 });
     const sw = new THREE.Group();
     for (const o of [-0.7, 0.7]) {
       const seat = new THREE.Group();
@@ -1193,7 +1194,7 @@ export function buildTown(scene, renderer, day) {
     const sx = 108, sz = -78.5;
     slab(plaza, col, sx - 1.6, sx + 1.6, sz - 1.6, sz + 1.6, 0.5, M.stone, 1.5, 0.15, 'ped1');
     slab(plaza, col, sx - 0.95, sx + 0.95, sz - 0.95, sz + 0.95, 0.75, M.stone, 1.5, 0.65, 'ped2');
-    const statue = buildDog(typeParams('sura', '', { fluff: 0.2, pattern: 'solid' }), { shells: false });
+    const statue = buildDog(typeParams('sura', '', { fluff: 0.2, pattern: 'solid' }), { shells: false, res: 1.5 });
     const bronze = new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.32, metalness: 0.85, envMapIntensity: 1.3 });
     statue.root.traverse((o) => { if (o.isMesh) { o.material = bronze; o.castShadow = true; o.userData.statue = true; } });
     if (statue.blob) statue.blob.visible = false;
@@ -1241,9 +1242,18 @@ export function buildTown(scene, renderer, day) {
     col.addBox(x - 1.1, x + 1.1, z - 1.1, z + 1.1, 0.15, 0.6, 'planter');
     col.addCircle(x, z, 0.3, 0.6, 6, 'trunk');
   }
-  flowerBed(plaza, 103, -80, 105.5, -77, 50, 61, [0xf6d35a, 0xf2735a, 0xffffff]);
-  box(plaza, 2.9, 0.3, 3.4, 104.25, 0.15, -78.5, 0x9c7650, { cast: false });
-  col.addBox(102.8, 105.7, -80.2, -76.8, 0.15, 0.45, 'bed');
+  // 像の前の花だん：石のふちに土を入れて、花は土の上に（前は花が土の箱にうまって、ただの茶色い箱に見えていた）
+  {
+    const x0 = 102.8, x1 = 105.7, z0 = -80.2, z1 = -76.8, top = 0.5, rim = 0.16;
+    const rimM = mat(0xcfc4b3, { rough: 0.9 });
+    for (const [bx0, bx1, bz0, bz1] of [[x0, x1, z0, z0 + rim], [x0, x1, z1 - rim, z1], [x0, x0 + rim, z0 + rim, z1 - rim], [x1 - rim, x1, z0 + rim, z1 - rim]]) {
+      box(plaza, bx1 - bx0, top - 0.15, bz1 - bz0, (bx0 + bx1) / 2, 0.15, (bz0 + bz1) / 2, rimM, { round: 0.03 });
+    }
+    box(plaza, x1 - x0 - rim * 2, top - 0.2, z1 - z0 - rim * 2, (x0 + x1) / 2, 0.15, (z0 + z1) / 2, 0x6a5040, { cast: false });
+    const fb = flowerBed(plaza, x0 + rim + 0.08, z0 + rim + 0.08, x1 - rim - 0.08, z1 - rim - 0.08, 110, 61, [0xf6d35a, 0xf2735a, 0xffffff, 0xf28aa8]);
+    fb.position.y = top - 0.05;
+    col.addBox(x0, x1, z0, z1, 0.15, top, 'bed');
+  }
   // ベンチ
   for (const [x, z, ry] of [[104, -63, 0], [116, -63, 0], [116, -84, Math.PI], [104, -93, Math.PI]]) {
     const b = bench(plaza, x, z, ry, 0x9c7650);

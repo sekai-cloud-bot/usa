@@ -333,7 +333,13 @@ function applyDog() {
   player.dog.setPose('sit');
   player.dog.setExpr('happy');
 }
-$('in-fluff').addEventListener('input', (e) => { dogParams = { ...dogParams, fluff: Number(e.target.value) / 100 }; applyDog(); });
+// もこもこ：作り直しは少し重いので、動かしている間は まとめて（0.12秒ごと）
+let fluffT = 0;
+$('in-fluff').addEventListener('input', (e) => {
+  dogParams = { ...dogParams, fluff: Number(e.target.value) / 100 };
+  clearTimeout(fluffT);
+  fluffT = setTimeout(applyDog, 120);
+});
 $('in-name').addEventListener('input', (e) => { dogParams = { ...dogParams, name: e.target.value.trim() || 'うさ' }; });
 $('btn-custom').addEventListener('click', () => {
   audio.unlock(); audio.play('ui');
