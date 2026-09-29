@@ -219,6 +219,8 @@ body.late .clock-pill .sun { background: radial-gradient(circle at 40% 38%, #ffd
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { background: #f6ecde; border-radius: 999px; padding: 8px 12px; font-weight: 800; font-size: 13px; }
 .chip.on { background: var(--accent); color: #fff; }
+.chips.types .chip { display: flex; flex-direction: column; align-items: flex-start; border-radius: 14px; padding: 7px 12px; line-height: 1.2; }
+.chips.types .chip small { font-size: 10px; font-weight: 700; opacity: .7; }
 .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 .sw { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1px #e6d6c4; }
 .sw.on { box-shadow: 0 0 0 3px var(--accent); }

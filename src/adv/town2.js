@@ -3,7 +3,7 @@ import { box, cyl, ball, mat, LIGHTS, TEX, canvasTex, signTex } from './build.js
 import { LM, makeHouse, bench, streetLamp, parkLamp, woodFence, blockWall, crate, guardrail, pottedPlant, bicycle } from './props.js';
 import { tree, hedge, bush, grassField, reeds, waterMaterial } from './nature.js';
 import { gmat, worldUV, ground, slab, paint, signBoard, cityBlock } from './town.js';
-import { buildDog, breedParams } from '../dogModel.js';
+import { buildDog, typeParams, sitRig } from '../dogModel.js';
 import { mulberry32, clamp, lerp, smooth, mergeParts, mat as M4 } from '../util.js';
 
 // ------------------------------------------------------------
@@ -629,14 +629,19 @@ export function buildShrine(ctx) {
       const x = -62.5;
       tbox(g, x - 0.6, x + 0.6, Y, Y + 0.9, z - 0.6, z + 0.6, stoneM, 1.5);
       col.addBox(x - 0.6, x + 0.6, z - 0.6, z + 0.6, Y, Y + 0.9, 'komainu');
-      const d = buildDog({ ...breedParams('shiba', ''), fluff: 0.5, ear: 'pointy', tail: 'plume' }, { shells: false });
+      const d = buildDog(typeParams('sura', '', { fluff: 0.5, ear: 'pin', tail: 'plume', pattern: 'solid' }), { shells: false });
       d.root.traverse((o) => { if (o.isMesh) { o.material = stone; o.castShadow = true; } });
       if (d.blob) d.blob.visible = false;
-      d.body.rotation.x = -0.45;
-      d.body.position.y = d.dims.bodyY * 0.82;
-      d.legs[2].rotation.x = -0.95; d.legs[3].rotation.x = -0.95;
-      d.legs[0].rotation.x = 0.45; d.legs[1].rotation.x = 0.45;
+      d.mouthOpen.visible = false;
+      d.tongue.visible = false;
+      d.eyes.forEach((e) => { e.visible = false; });
+      d.blush.forEach((b) => { b.visible = false; });
+      sitRig(d);
       d.head.rotation.x = -0.1;
+      // 見えない部品は、まとめる前に取りのぞく
+      const hidden = [];
+      d.root.traverse((o) => { if (o !== d.root && !o.visible) hidden.push(o); });
+      for (const o of hidden) if (o.parent) o.parent.remove(o);
       d.root.scale.setScalar(2.4);
       d.root.position.set(x, Y + 0.9, z);
       d.root.rotation.y = ry;

@@ -185,10 +185,10 @@ float fn3(vec3 x) {
 }`;
 
 /** 毛のマテリアル。rim: ふちの光、fuzz: 毛並みの細かい凹凸、self: 自己発光（白い毛が灰色にならないように） */
-export function furMaterial({ rim = 0.55, fuzz = 0.5, self = 0.12, scale = 70, rough = 0.9, flat = false } = {}) {
+export function furMaterial({ rim = 0.55, fuzz = 0.5, self = 0.12, scale = 70, rough = 0.9, flat = false, wrap = 0, mottle = 0.1 } = {}) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: rough, metalness: 0, flatShading: flat });
   m.userData.shared = true;
-  m.customProgramCacheKey = () => `fur${rim}|${fuzz}|${self}|${scale}|${flat}`;
+  m.customProgramCacheKey = () => `fur${rim}|${fuzz}|${self}|${scale}|${flat}|${wrap}|${mottle}`;
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFurP;')
@@ -203,7 +203,7 @@ export function furMaterial({ rim = 0.55, fuzz = 0.5, self = 0.12, scale = 70, r
           vec3 g = vec3(fn3(q + vec3(e, 0, 0)) - n0, fn3(q + vec3(0, e, 0)) - n0, fn3(q + vec3(0, 0, e)) - n0) / e;
           normal = normalize(normal + (g - dot(g, normal) * normal) * ${(fuzz * 0.35).toFixed(3)});
           // 毛の房の奥はすこし暗く
-          diffuseColor.rgb *= 0.9 + 0.1 * fn3(q * 0.35);
+          diffuseColor.rgb *= ${(1 - mottle).toFixed(3)} + ${mottle.toFixed(3)} * fn3(q * 0.35);
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * ${self.toFixed(3)};`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
@@ -215,6 +215,13 @@ export function furMaterial({ rim = 0.55, fuzz = 0.5, self = 0.12, scale = 70, r
             rimC += directionalLights[0].color * back * back * 0.45;
           #endif
           reflectedLight.directDiffuse += diffuseColor.rgb * rimC * fr * ${rim.toFixed(3)};
+          ${wrap > 0 ? `
+          // 光が毛の中でまわりこむ：影の境目がやわらかく、少しあたたかい色に
+          #if defined( HAS_DIR_LIGHT_UNIFORMS ) && NUM_DIR_LIGHTS > 0
+            float ndl = dot(normal, directionalLights[0].direction);
+            float wr = saturate((ndl + ${wrap.toFixed(3)}) / ${(1 + wrap).toFixed(3)}) - saturate(ndl);
+            reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * wr * vec3(1.0, 0.8, 0.74) * 0.55;
+          #endif` : ''}
         }`);
   };
   return m;
@@ -230,8 +237,8 @@ const shellCache = new Map();
  * masks: [[x, y, z, r], ...]（最大4つ）その近くは毛を生やさない（目・鼻・口）。
  * masks 付きは共有しない
  */
-export function furShellMaterial(k, len, { density = 150, masks = null } = {}) {
-  const key = k.toFixed(3) + '|' + len.toFixed(3) + '|' + density;
+export function furShellMaterial(k, len, { density = 150, masks = null, soft = false } = {}) {
+  const key = k.toFixed(3) + '|' + len.toFixed(3) + '|' + density + (soft ? 's' : '');
   if (!masks && shellCache.has(key)) return shellCache.get(key);
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
   m.userData.shared = true;
@@ -242,7 +249,7 @@ export function furShellMaterial(k, len, { density = 150, masks = null } = {}) {
     const v = masks && masks[i] ? masks[i] : [0, 0, 0, 0];
     mk.push(new THREE.Vector4(v[0], v[1], v[2], v[3]));
   }
-  m.customProgramCacheKey = () => 'furshell' + density + (masks ? 'm' : '');
+  m.customProgramCacheKey = () => 'furshell' + density + (masks ? 'm' : '') + (soft ? 's' : '');
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uShell = { value: k };
     sh.uniforms.uFurLen = { value: len };
@@ -265,13 +272,24 @@ export function furShellMaterial(k, len, { density = 150, masks = null } = {}) {
           vec3 c = fh3(cell) * 0.6 + 0.2;
           float d = length(fract(q) - c);
           float clump = fn3(vFurP * 34.0);
+          ${soft ? `
+          // ふんわり：太めの房で、毛先はやわらかく明るい
+          // 1本ずつの毛ではなく、なめらかなノイズの房（網目のような模様が出ない）
+          float fz = fn3(q) * 0.62 + fn3(q * 2.3 + 7.1) * 0.38;
+          float th = mix(0.28, 0.78, uShell);
+          // 正面の毛はうすく、ふち（輪郭）だけ ふわっと見せる（ざらざらした点々にならない）
+          float facing = abs(dot(normalize(vNormal), normalize(vViewPosition)));
+          float edge = mix(0.12, 1.0, 1.0 - smoothstep(0.18, 0.72, facing));
+          diffuseColor.a = smoothstep(th, th + 0.14, fz) * (1.0 - uShell * 0.45) * edge;
+          if (diffuseColor.a < 0.05) discard;
+          diffuseColor.rgb *= mix(0.97, 1.06, uShell);` : `
           float rad = (0.62 - uShell * 0.5) * (0.75 + 0.45 * clump);
           float w = fwidth(d) + 0.02;
           diffuseColor.a = 1.0 - smoothstep(rad - w, rad + w, d);
           if (diffuseColor.a < 0.02) discard;
-          diffuseColor.rgb *= mix(0.62, 1.08, uShell) * (0.94 + 0.12 * clump);
+          diffuseColor.rgb *= mix(0.62, 1.08, uShell) * (0.94 + 0.12 * clump);`}
         }`)
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * 0.08;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * ${soft ? '0.14' : '0.08'};`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         {
           float fr = pow(1.0 - saturate(abs(dot(normal, geometryViewDir))), 2.2);
@@ -280,18 +298,18 @@ export function furShellMaterial(k, len, { density = 150, masks = null } = {}) {
             float back = saturate(dot(-geometryViewDir, directionalLights[0].direction) * 0.5 + 0.5);
             rimC += directionalLights[0].color * back * back * 0.35;
           #endif
-          reflectedLight.directDiffuse += diffuseColor.rgb * rimC * fr * (0.15 + 0.5 * uShell);
+          reflectedLight.directDiffuse += diffuseColor.rgb * rimC * fr * ${soft ? '(0.2 + 0.2 * uShell)' : '(0.15 + 0.5 * uShell)'};
         }`);
   };
   if (!masks) shellCache.set(key, m);
   return m;
 }
 /** mesh に毛の殻を子として足す（同じジオメトリを使い回す） */
-export function addFurShells(mesh, len, n = FUR.shells, masks = null) {
+export function addFurShells(mesh, len, n = FUR.shells, masks = null, opts = {}) {
   if (n <= 0 || len <= 0.002) return;
   for (let i = 1; i <= n; i++) {
     const k = i / n;
-    const mat = furShellMaterial(k, len, { masks });
+    const mat = furShellMaterial(k, len, { masks, ...opts });
     const s = new THREE.Mesh(mesh.geometry, mat);
     s.castShadow = false;
     s.receiveShadow = true;

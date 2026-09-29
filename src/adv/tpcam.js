@@ -67,8 +67,9 @@ export class TPCam {
     }
     this.userT += dt;
     const p = player.pos;
-    // 目標点：ジャンプでは上下をゆっくり追う
-    const ty = p.y + 0.5;
+    const size = player.dog.rig ? player.dog.rig.dims.scale : 1;
+    // 目標点：ジャンプでは上下をゆっくり追う（大きい子ほど高く）
+    const ty = p.y + 0.5 * Math.pow(size, 0.8);
     this.target.x = instant ? p.x : damp(this.target.x, p.x, 14, dt);
     this.target.z = instant ? p.z : damp(this.target.z, p.z, 14, dt);
     this.target.y = instant ? ty : damp(this.target.y, ty, player.grounded ? 8 : 3, dt);
@@ -80,19 +81,31 @@ export class TPCam {
       this.pitch = damp(this.pitch, 0.26, 0.6, dt);
     }
     const inside = p.x > ROOM.minX && p.x < ROOM.maxX && p.z > ROOM.minZ && p.z < ROOM.maxZ;
-    const want = inside ? Math.min(this.dist, 2.6) : this.dist + (player.run ? 0.5 : 0);
+    // 橋の下など、低い天井の下では ほぼ水平から（上から見下ろすと 天井で犬が隠れる）
+    const ceil = inside ? Infinity : this.col.ceilingAt(p.x, p.z, p.y + 0.2);
+    const under = ceil - p.y < 3 && ceil - p.y > 0.8;   // ベンチの下などは のぞく
+    if (under) this.pitch = damp(this.pitch, 0.03, 8, dt);
+    const sk = 0.75 + 0.25 * Math.max(1, size);
+    const want = inside ? Math.min(this.dist * sk, 2.9) : this.dist * sk + (player.run ? 0.5 : 0);
     const cp = Math.cos(this.pitch);
     _d.set(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp);
     // 壁よけ
     const hit = this.col.rayDist(this.target.x, this.target.y, this.target.z, _d.x, _d.y, _d.z, want + 0.3);
     let dist = Math.max(0.55, Math.min(want, hit - 0.3));
-    // 壁が近くて寄りすぎる時は、上から見下ろす
-    if (hit < want * 0.65 && !inside) this.pitch = damp(this.pitch, 0.95, 2.2, dt);
+    // 壁が近くて寄りすぎる時は、上から見下ろす（天井の下では しない）
+    if (hit < want * 0.65 && !inside && !under) this.pitch = damp(this.pitch, 0.95, 2.2, dt);
     this.curDist = instant ? dist : (dist < this.curDist ? damp(this.curDist, dist, 18, dt) : damp(this.curDist, dist, 3, dt));
     _t.copy(this.target).addScaledVector(_d, this.curDist);
     if (inside) _t.y = Math.min(_t.y, ROOM.h - 0.25);
-    const gy = this.col.groundAt(_t.x, _t.z, 0.1, _t.y + 0.5, 0.5);
-    _t.y = Math.max(_t.y, gy + 0.25, 0.25);
+    if (under) _t.y = Math.min(_t.y, ceil - 0.3);
+    else {
+      // カメラの場所の上に天井があれば、その下へ（橋げたの中に入らない）
+      const cc = this.col.ceilingAt(_t.x, _t.z, this.target.y);
+      if (cc - this.target.y < 3 && cc - p.y > 0.8) _t.y = Math.min(_t.y, cc - 0.3);
+    }
+    // 地面より下には行かない（川原など、高さ0より低い所もあるので 地面を基準に）
+    const gy = this.col.groundAt(_t.x, _t.z, 0.1, Math.min(_t.y + 0.5, under ? ceil - 0.1 : Infinity), 0.5);
+    _t.y = Math.max(_t.y, gy + 0.25);
     // 画面のゆれ
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt * 2.5);

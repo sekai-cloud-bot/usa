@@ -31,7 +31,7 @@ export class Player {
     this.support = null;
     this.puppet = false;
     this._move = new THREE.Vector3();
-    this.adapter = { resolveDog: (d) => this.col.resolve(d.pos, d.radius, HEIGHT, STEP) };
+    this.adapter = { resolveDog: (d) => this.col.resolve(d.pos, d.radius, HEIGHT * Math.max(1, d.rig ? d.rig.dims.scale * 0.8 : 1), STEP) };
   }
 
   setParams(p) { this.dog.setParams(p); }

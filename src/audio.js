@@ -700,17 +700,18 @@ export class Audio {
     };
     this.amb = {
       river: mk('lowpass', 650, 0.6, 0.23, 0.35),
-      street: mk('bandpass', 620, 0.7, 0.4, 0.5),
+      // 商店街のざわめきは、ノイズだと波の音に聞こえるので使わない
       wind: mk('lowpass', 320, 0.8, 0.09, 0.6),
       traffic: mk('lowpass', 150, 0.7, 0.05, 0.3),
     };
-    this.ambLv = { river: 0, street: 0, wind: 0, traffic: 0 };
+    this.ambLv = { river: 0, wind: 0, traffic: 0 };
   }
   /** 0..1 の大きさ */
   setAmbience(lv) {
     if (!this.amb) return;
     const MAX = { river: 0.22, street: 0.09, wind: 0.1, traffic: 0.12 };
     for (const k in lv) {
+      if (!this.amb[k]) continue;
       if (Math.abs((this.ambLv[k] ?? 0) - lv[k]) < 0.02) continue;
       this.ambLv[k] = lv[k];
       this.amb[k].gain.setTargetAtTime(lv[k] * MAX[k], this.ctx.currentTime, 0.6);

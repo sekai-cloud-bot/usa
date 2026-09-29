@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { buildDog } from './dogModel.js';
-import { clamp, damp, dampAngle, rand, disposeObject } from './util.js';
+import { buildDog, fitLeg } from './dogModel.js';
+import { clamp, damp, dampAngle, lerp, rand, disposeObject } from './util.js';
 import { audio } from './audio.js';
 
 const _v = new THREE.Vector3();
@@ -72,7 +72,10 @@ export class Dog {
     this.params = params;
     this.rig = buildDog(params);
     this.scene.add(this.rig.root);
-    this.radius = 0.16 + this.rig.dims.bodyLen * 0.15;
+    const dm = this.rig.dims;
+    this.rig.neck.userData.baseY = this.rig.neck.position.y;
+    // 当たりの半径（大きい子ほど大きく。細い道で引っかからないように上限あり）
+    this.radius = Math.min(0.34, dm.scale * (0.09 + Math.max(dm.rx, dm.rz) * 0.42));
     if (prevHeld && prevHeld.mesh) this.rig.mouth.add(prevHeld.mesh);
     this.syncRoot();
   }
@@ -221,13 +224,14 @@ export class Dog {
     const breathe = Math.sin(this.t * 2.2) * 0.006 * (1 + lie + belly);
 
     const body = rig.body;
-    let y = d.bodyY + Math.abs(Math.sin(g)) * 0.03 * amp + breathe
-      - sit * d.bodyY * 0.18 - lie * (d.bodyY - d.bodyR * 0.95) - bow * 0.035 + this.hopY;
-    y = y * (1 - belly) + (d.bodyR * 1.02 + breathe) * belly;
+    // 足が地面から浮かないように、上下のゆれは小さく
+    let y = lerp(d.bodyY, d.sitY, sit) + Math.abs(Math.sin(g)) * 0.008 * amp + breathe
+      - lie * (d.bodyY - d.lieY) - bow * d.ry * 0.22 + this.hopY;
+    y = y * (1 - belly) + (d.ry * 1.02 + breathe) * belly;
     body.position.y = y;
-    body.position.z = -sit * 0.03;
+    body.position.z = -sit * d.rz * 0.12;
     const gallop = dash ? Math.sin(g) * 0.14 : 0;
-    body.rotation.x = -0.45 * sit + gallop + lie * 0.05 + bow * 0.36 - this.reach * 0.35 + this.dig * 0.32 + this.extraPitch;
+    body.rotation.x = -d.sitPitch * sit + gallop + lie * 0.05 + bow * 0.36 - this.reach * 0.35 + this.dig * 0.32 + this.extraPitch;
     body.position.y -= this.dig * 0.03;
     body.rotation.y = bow * Math.sin(this.t * 13) * 0.14;
     body.rotation.z = Math.sin(g) * 0.05 * amp + Math.sin(this.t * 34) * 0.05 * this.shake
@@ -265,6 +269,10 @@ export class Dog {
     }
     FL.rotation.z = -0.15 * this.shake - belly * 0.3;
     FR.rotation.z = 0.15 * this.shake + belly * 0.3;
+    // おすわり・ふせでは、前足の長さを地面に合わせる（浮かない・めりこまない）
+    const plant = clamp(sit + bow, 0, 1) * (1 - lie) * (1 - belly) * (1 - this.air);
+    for (const L of rig.legs) L.scale.y = 1;
+    if (plant > 0.01) { fitLeg(rig, FL, plant); fitLeg(rig, FR, plant); }
 
     // ---- 頭 ----
     let yawT = 0, pitchT = 0;
@@ -291,7 +299,7 @@ export class Dog {
     head.rotation.x = this.lookPitch + chewNod + sniffNod + Math.sin(g) * 0.05 * amp + lie * 0.25 + sit * 0.3
       - (this.dashT > 0 ? 0.1 : 0) - yawn * 0.5 + barkUp + bow * 0.12 - this.reach * 0.4 + this.dig * 0.35;
     head.rotation.z = this.tilt + Math.sin(this.t * 30) * 0.2 * this.shake;
-    rig.neck.position.y = d.bodyR * 0.5 - lie * 0.04;
+    rig.neck.position.y = rig.neck.userData.baseY - lie * d.ry * 0.25;
 
     // しっぽ
     const wagSpeed = 7 + this.excite * 13 + sp * 2 + bow * 10 + this.dig * 8;
@@ -305,7 +313,7 @@ export class Dog {
     for (let i = 0; i < 2; i++) {
       const ear = rig.ears[i];
       const side = i === 0 ? -1 : 1;
-      const floppy = d.earType === 'fluffy' || d.earType === 'long';
+      const floppy = d.earType === 'fuwa' || d.earType === 'long' || d.earType === 'tare';
       const target = (this.surprise > 0 ? -0.35 : 0) + (dash ? 0.5 : 0) + (this.expr === 'guilty' ? 0.4 : 0);
       this.earV[i] += (bobAcc * (floppy ? 0.02 : 0.006) - (this.earA[i] - target) * 90 - this.earV[i] * 10) * dt;
       this.earA[i] += this.earV[i] * dt;
@@ -341,11 +349,14 @@ export class Dog {
       e.children[1].scale.setScalar(1 + this.sparkle * 0.6);
       e.children[2].scale.setScalar(1 + this.sparkle * 0.8);
     }
-    const mouthAmt = Math.max(yawn, this.barkT > 0 ? Math.sin((this.barkT / 0.28) * Math.PI) * 0.7 : 0);
+    // 口：うれしい時は にこっと あいて、舌が見える
+    const smile = this.expr === 'sleep' ? 0 : tongue * (0.45 + 0.3 * this.excite);
+    const mouthAmt = Math.max(yawn, smile, this.barkT > 0 ? Math.sin((this.barkT / 0.28) * Math.PI) * 0.9 : 0);
     rig.mouthOpen.visible = mouthAmt > 0.03 && !this.held;
-    rig.mouthOpen.scale.set(1 - mouthAmt * 0.1, Math.max(0.01, mouthAmt * 1.1), 1);
-    rig.tongue.visible = (tongue > 0.05 || yawn > 0.3) && !this.held;
-    rig.tongue.scale.set(1, 0.45, 0.6 + Math.max(tongue, yawn) * 0.6);
+    rig.mouthOpen.scale.set(1, Math.max(0.05, mouthAmt), 1);
+    rig.tongue.visible = mouthAmt > 0.18 && !this.held;
+    if (rig.tongue.userData.baseY === undefined) rig.tongue.userData.baseY = rig.tongue.position.y;
+    rig.tongue.position.y = rig.tongue.userData.baseY + (1 - mouthAmt) * d.headR * 0.05;
     for (const b of rig.blush) b.material.opacity = 0.3 + this.sparkle * 0.35;
 
     this.syncRoot();
@@ -354,7 +365,8 @@ export class Dog {
     rig.head.getWorldPosition(this.headWorld);
     rig.head.getWorldDirection(this.headDir);
     const f = this.fwd;
-    this.front.set(this.pos.x + f.x * (0.3 + d.bodyLen * 0.25), this.pos.y, this.pos.z + f.z * (0.3 + d.bodyLen * 0.25));
+    const reachF = (0.22 + d.rz * 1.2) * d.scale;
+    this.front.set(this.pos.x + f.x * reachF, this.pos.y, this.pos.z + f.z * reachF);
   }
 
   syncRoot() {

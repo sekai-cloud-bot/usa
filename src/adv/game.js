@@ -338,47 +338,49 @@ export class Game {
     this.train.z = -255;
     this.train.v = 21;
     const fog0 = day.fogScale;
-    const from = this.camera.position.clone();
     const station = V(128, 7, -66);
-    const dogP = p.pos.clone();
+    // 犬は窓の外の芝生へ。まっすぐ前（家と反対がわ）を向く
+    const dogP = V(7.4, 0, 0.3);
+    p.place(dogP.x, 0, dogP.z, Math.PI / 2);
+    p.dog.setPose('stand');
     this.post.tilt = 0.8;
     this.post.tiltFocus = 0.45;
+    // カメラは いつも家の外（庭がわ x > 5）：犬の横から → 庭の上へ上がり、町と駅を見わたす
+    const a = V(dogP.x + 1.6, 0.75, dogP.z + 2.2);
+    const b = V(dogP.x + 3.5, 17, dogP.z + 12);
     this.cine((c, dt, t) => {
       day.fogScale = lerp(fog0, 1.9, smooth(clamp(t / 2.5, 0, 1)));
       const k = smooth(clamp(t / 6.5, 0, 1));
-      // 犬の背中 → 空へ持ち上がって町を見わたす
-      const a = V(dogP.x - 1.8, dogP.y + 0.7, dogP.z + 0.3);
-      const b = V(dogP.x - 7, 18, dogP.z + 15);
-      c.position.lerpVectors(t < 0.01 ? from : a, b, k);
-      const look = _v.lerpVectors(V(dogP.x + 3, 0.6, dogP.z), V(station.x, 13, station.z - 10), smooth(clamp((t - 0.6) / 5, 0, 1)));
+      c.position.lerpVectors(a, b, k);
+      // 少しだけ弧をえがく（柵や木の上を通る）
+      c.position.y += Math.sin(k * Math.PI) * 1.5;
+      const look = _v.lerpVectors(V(dogP.x, 0.45, dogP.z), V(station.x, 13, station.z - 10), smooth(clamp((t - 0.6) / 5, 0, 1)));
       c.lookAt(look);
       const fov = lerp(50, 38, k);
       if (Math.abs(c.fov - fov) > 0.01) { c.fov = fov; c.updateProjectionMatrix(); }
       return true;
     });
     audio.play('whoosh');
-    yield 1.0;
-    // カメラが空へ上がっている間に、犬は庭へ降りておく
-    p.place(6.9, 0, 0.4, 0.54);
-    yield 1.2;
+    yield 2.2;
     ui.title('駅まで、おむかえに。', '18:00 の電車で、あの人が帰ってくる。', 5.2);
     audio.play('chime');
     yield 5.8;
-    // 犬のうしろへ戻る
+    // 犬のうしろへ戻る（家の壁より外がわから）
     const back = this.camera.position.clone();
+    const size = p.dog.rig.dims.scale;
+    const behind = V(Math.max(5.1, p.pos.x - 2.4 * Math.max(1, size * 0.8)), p.pos.y + 1.15 * Math.max(1, size * 0.8), p.pos.z);
     this.cine((c, dt, t) => {
       const k = smooth(clamp(t / 1.6, 0, 1));
       day.fogScale = lerp(1.9, fog0, k);
       this.post.tilt = 0.8 * (1 - k);
-      const behind = V(p.pos.x - 1.6, p.pos.y + 1.3, p.pos.z - 2.8);
       c.position.lerpVectors(back, behind, k);
-      c.lookAt(_v.lerpVectors(station, V(p.pos.x + 1.5, 0.5, p.pos.z + 2.6), k));
+      c.lookAt(_v.lerpVectors(station, V(p.pos.x + 2.5, 0.5, p.pos.z), k));
       c.fov = lerp(38, 55, k); c.updateProjectionMatrix();
       return t < 1.6;
     });
     yield 1.6;
     day.fogScale = fog0;
-    this.endCine(0.54 + Math.PI, 0.3);
+    this.endCine(Math.PI / 2 + Math.PI, 0.28);
     cam.blend = 1;
     p.locked = false;
     ui.letterbox(false);
@@ -526,14 +528,12 @@ export class Game {
     }
     // 駅と電車
     if (this.state === 'play') this.checkStation(dt);
-    // 環境音：川の音・商店街のざわめき・高台の風・大通りの車
+    // 環境音：川の音・高台の風・大通りの車
     if (this.state !== 'idle') {
       const nearRiver = dp.z < -100 ? clamp(1 - (Math.abs(dp.z + 140) - 6) / 38, 0, 1) : 0;
-      const inStreet = clamp(1 - (Math.abs(dp.x - 43) - 4) / 10, 0, 1) * (dp.z < 8 && dp.z > -52 ? 1 : 0);
       audio.setAmbience({
         river: nearRiver,
-        street: inStreet,
-        wind: dp.y > 5 ? 1 : this.area === 'river' ? 0.5 : 0.25,
+        wind: dp.y > 5 ? 1 : this.area === 'river' ? 0.45 : 0.1,
         traffic: clamp(1 - (Math.abs(dp.x - 87) - 6) / 36, 0, 1) * (dp.z < -30 && dp.z > -160 ? 1 : 0.3),
       });
     }

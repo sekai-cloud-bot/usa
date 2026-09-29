@@ -13,7 +13,7 @@ import { Game, GIFTS, EVENTS, KINDS } from './game.js';
 import { AREA_NAMES } from './events.js';
 import { loadSave, save, getSave } from './save.js';
 import { shareDiary, fmtHour } from './share.js';
-import { BREEDS, COLORS, breedParams, defaultDogParams, colorHex } from '../dogModel.js';
+import { TYPES, SIZES, PATTERNS, EARS, TAILS, COLORS, typeParams, normalizeDogParams, colorHex } from '../dogModel.js';
 import { audio } from '../audio.js';
 import { isTouchDevice, clamp, smooth } from '../util.js';
 import { BED } from '../room.js';
@@ -59,7 +59,8 @@ const ctl = new Controls(canvas, cam);
 const ui = new UI(camera);
 ui.setTouch(touch);
 ctl.onAny = () => { if (ctl.touch !== ui.touch) ui.setTouch(ctl.touch); };
-let dogParams = data.dog || defaultDogParams();
+// 前のバージョン（犬種）の保存データも、タイプに読みかえて使う
+let dogParams = normalizeDogParams(data.dog);
 player.setParams(dogParams);
 player.place(BED.x, 0.05, BED.z, -2.2);
 player.dog.setPose('lie');
@@ -138,9 +139,11 @@ function customCam(c) {
   const r = customCard.getBoundingClientRect();
   const cx = land ? clamp(r.left / 2 / W, 0.2, 0.5) : 0.5;
   const cy = land ? 0.5 : clamp(r.top / 2 / H, 0.2, 0.5);
-  const k = land ? 1 : 1.55;   // 縦長は横が狭いので引く
-  c.position.set(player.pos.x - 1.3 * k, 0.75 + (k - 1) * 0.3, player.pos.z + 1.35 * k);
-  c.lookAt(d.pos.x, 0.3, d.pos.z);
+  // 縦長は横が狭いので引く。大きい子は そのぶん引く
+  const sz = Math.max(0.9, d.rig.dims.scale);
+  const k = (land ? 1 : 1.55) * sz;
+  c.position.set(player.pos.x - 1.3 * k, 0.75 * sz + (k / sz - 1) * 0.3, player.pos.z + 1.35 * k);
+  c.lookAt(d.pos.x, 0.3 * sz, d.pos.z);
   if (c.fov !== 42) c.fov = 42;
   c.setViewOffset(W, H, W * (0.5 - cx), H * (0.5 - cy), W, H);
   post.tilt = 0;
@@ -275,20 +278,42 @@ $('btn-sound').addEventListener('click', () => { data.settings.sound = !data.set
 $('btn-sound2').addEventListener('click', () => { data.settings.sound = !data.settings.sound; audio.setEnabled(data.settings.sound); soundLabel(); save(); });
 
 // うちの子えらび
+let colorPicked = false;
 function buildCustom() {
-  const bw = $('opt-breed');
-  bw.innerHTML = '';
-  for (const [id, b] of Object.entries(BREEDS)) {
+  // タイプ：体つきを選ぶと、耳・しっぽ・もよう・毛の量も その子らしく
+  const tw = $('opt-type');
+  tw.innerHTML = '';
+  for (const [id, t] of Object.entries(TYPES)) {
     const c = document.createElement('button');
-    c.className = 'chip' + (dogParams.breed === id ? ' on' : '');
-    c.textContent = b.label;
+    c.className = 'chip' + (dogParams.type === id ? ' on' : '');
+    const b = document.createElement('b');
+    b.textContent = t.label;
+    const sm = document.createElement('small');
+    sm.textContent = t.sub;
+    c.append(b, sm);
     c.onclick = () => {
-      dogParams = { ...breedParams(id, dogParams.name) };
+      // 色を自分で選んでいたら、その色のまま
+      dogParams = typeParams(id, dogParams.name, colorPicked ? { color: dogParams.color } : {});
       applyDog();
       buildCustom();
     };
-    bw.appendChild(c);
+    tw.appendChild(c);
   }
+  const chips = (el, list, key) => {
+    const w = $(el);
+    w.innerHTML = '';
+    for (const o of list) {
+      const c = document.createElement('button');
+      c.className = 'chip' + (dogParams[key] === o.id ? ' on' : '');
+      c.textContent = o.label;
+      c.onclick = () => { dogParams = { ...dogParams, [key]: o.id }; applyDog(); buildCustom(); };
+      w.appendChild(c);
+    }
+  };
+  chips('opt-size', SIZES, 'size');
+  chips('opt-pattern', PATTERNS, 'pattern');
+  chips('opt-ear', EARS, 'ear');
+  chips('opt-tail', TAILS, 'tail');
   const cw = $('opt-color');
   cw.innerHTML = '';
   for (const col of COLORS) {
@@ -296,7 +321,7 @@ function buildCustom() {
     s.className = 'sw' + (dogParams.color === col.id ? ' on' : '');
     s.style.background = col.hex;
     s.title = col.label;
-    s.onclick = () => { dogParams = { ...dogParams, color: col.id }; applyDog(); buildCustom(); };
+    s.onclick = () => { colorPicked = true; dogParams = { ...dogParams, color: col.id }; applyDog(); buildCustom(); };
     cw.appendChild(s);
   }
   $('in-fluff').value = Math.round(dogParams.fluff * 100);

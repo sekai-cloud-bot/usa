@@ -8,7 +8,7 @@ import { tree, hedge, bush, grassField, flowerBed, waterMaterial, Petals, update
 import { Collision } from './collide.js';
 import { buildRiver, buildShrine } from './town2.js';
 import { buildRoom, ROOM, WINDOW } from '../room.js';
-import { buildDog, breedParams } from '../dogModel.js';
+import { buildDog, typeParams, sitRig } from '../dogModel.js';
 import { mulberry32 } from '../util.js';
 
 // ------------------------------------------------------------
@@ -1193,7 +1193,7 @@ export function buildTown(scene, renderer, day) {
     const sx = 108, sz = -78.5;
     slab(plaza, col, sx - 1.6, sx + 1.6, sz - 1.6, sz + 1.6, 0.5, M.stone, 1.5, 0.15, 'ped1');
     slab(plaza, col, sx - 0.95, sx + 0.95, sz - 0.95, sz + 0.95, 0.75, M.stone, 1.5, 0.65, 'ped2');
-    const statue = buildDog({ ...breedParams('shiba', ''), fluff: 0.2 }, { shells: false });
+    const statue = buildDog(typeParams('sura', '', { fluff: 0.2, pattern: 'solid' }), { shells: false });
     const bronze = new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.32, metalness: 0.85, envMapIntensity: 1.3 });
     statue.root.traverse((o) => { if (o.isMesh) { o.material = bronze; o.castShadow = true; o.userData.statue = true; } });
     if (statue.blob) statue.blob.visible = false;
@@ -1201,28 +1201,28 @@ export function buildTown(scene, renderer, day) {
     statue.root.position.set(sx, 1.4, sz);
     statue.root.rotation.y = Math.PI / 2; // 駅の改札を見つめて待っている
     // おすわりの姿勢
-    statue.body.rotation.x = -0.45;
-    statue.body.position.y = statue.dims.bodyY * 0.82;
-    statue.legs[2].rotation.x = -0.95;
-    statue.legs[3].rotation.x = -0.95;
-    statue.legs[0].rotation.x = 0.45;
-    statue.legs[1].rotation.x = 0.45;
+    sitRig(statue);
     statue.head.rotation.x = 0.1;
+    statue.mouthOpen.visible = false;
+    statue.tongue.visible = false;
     // 1つのメッシュにまとめる
     statue.root.updateMatrixWorld(true);
     const sgeos = [];
-    statue.root.traverse((o) => {
-      if (!o.isMesh || !o.visible || o.material.transparent) return;
+    statue.root.traverseVisible((o) => {
+      if (!o.isMesh || o.material.transparent) return;
       const gg = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone());
       gg.applyMatrix4(o.matrixWorld);
       for (const k of Object.keys(gg.attributes)) if (k !== 'position' && k !== 'normal') gg.deleteAttribute(k);
       sgeos.push(gg);
     });
-    const spos = [], snor = [];
-    for (const gg of sgeos) { spos.push(...gg.attributes.position.array); snor.push(...gg.attributes.normal.array); }
+    let sn = 0;
+    for (const gg of sgeos) sn += gg.attributes.position.array.length;
+    const spos = new Float32Array(sn), snor = new Float32Array(sn);
+    let so = 0;
+    for (const gg of sgeos) { spos.set(gg.attributes.position.array, so); snor.set(gg.attributes.normal.array, so); so += gg.attributes.position.array.length; }
     const sgeo = new THREE.BufferGeometry();
-    sgeo.setAttribute('position', new THREE.Float32BufferAttribute(spos, 3));
-    sgeo.setAttribute('normal', new THREE.Float32BufferAttribute(snor, 3));
+    sgeo.setAttribute('position', new THREE.BufferAttribute(spos, 3));
+    sgeo.setAttribute('normal', new THREE.BufferAttribute(snor, 3));
     const smesh = new THREE.Mesh(sgeo, bronze);
     smesh.castShadow = true;
     smesh.receiveShadow = true;

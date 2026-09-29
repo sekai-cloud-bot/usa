@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Cat, Crow, Pigeons, Ducks, makeItem } from './actors.js';
 import { Dog } from '../dog.js';
-import { breedParams } from '../dogModel.js';
+import { typeParams } from '../dogModel.js';
 import { audio } from '../audio.js';
 import { RIVER, SHRINE } from './town2.js';
 import { softMaterial } from './look.js';
@@ -741,7 +741,7 @@ function park(g) {
 
   // 柴犬のこむぎ（ワンで、おいかけっこ）
   const shiba = new Dog(scene);
-  shiba.setParams({ ...breedParams('shiba', 'こむぎ'), fluff: 0.25 });
+  shiba.setParams(typeParams('sura', 'こむぎ', { color: 'red', pattern: 'mask', fluff: 0.3, size: 's' }));
   shiba.place(60.3, -66.6, Math.PI + 0.3);
   shiba.setPose('sit');
   g.shiba = shiba;
@@ -979,8 +979,8 @@ function river(g) {
     g.post.tiltFocus = 0.55;
     g.cine((c, dt, t) => {
       const a = 0.9 + t * 0.03;
-      c.position.set(mid.x + Math.sin(a) * 3.2, mid.y + 1.2, mid.z + Math.cos(a) * 3.2);
-      c.lookAt(mid.x, mid.y + 0.7, mid.z);
+      c.position.set(mid.x + Math.sin(a) * 3.2, mid.y + 0.75, mid.z + Math.cos(a) * 3.2);
+      c.lookAt(mid.x, mid.y + 0.55, mid.z);
       if (c.fov !== 42) { c.fov = 42; c.updateProjectionMatrix(); }
       return true;
     });

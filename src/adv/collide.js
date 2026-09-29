@@ -78,6 +78,16 @@ export class Collision {
     return g;
   }
 
+  /** 真上にある いちばん低い天井（橋の下など）。なければ Infinity */
+  ceilingAt(x, z, y) {
+    let c = Infinity;
+    for (const b of this.near(x, z, 0.1)) {
+      if (!b.on || b.tag === 'thin') continue;
+      if (x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1 && b.y0 > y && b.y0 < c) c = b.y0;
+    }
+    return c;
+  }
+
   /** 点が箱の中か（天井や屋根の判定用） */
   inside(x, y, z, tag) {
     for (const b of this.near(x, z, 0.1)) {
