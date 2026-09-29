@@ -183,6 +183,80 @@ export class ScentTrail {
 }
 
 // ------------------------------------------------------------
+// 夕日の中を ただよう ほこり（太陽のほうを見ると、きらきら光る）
+// ------------------------------------------------------------
+const _cd = new THREE.Vector3();
+export class Motes {
+  constructor(scene, n = 110) {
+    this.n = n;
+    this.R = 7;
+    const g = new THREE.BufferGeometry();
+    this.pos = new Float32Array(n * 3);
+    this.rel = new Float32Array(n * 3);
+    this.seed = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      for (let k = 0; k < 3; k++) this.rel[i * 3 + k] = (Math.random() * 2 - 1) * this.R;
+      this.seed[i] = Math.random() * 100;
+    }
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aSeed', new THREE.BufferAttribute(this.seed, 1));
+    this.mat = new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: new THREE.Color(1, 0.85, 0.6) }, uAlpha: { value: 0 }, uScale: { value: 300 }, uTime: { value: 0 } },
+      vertexShader: /* glsl */`
+        attribute float aSeed; uniform float uScale; uniform float uTime; varying float vA;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          float tw = 0.55 + 0.45 * sin(uTime * (0.8 + fract(aSeed) * 1.6) + aSeed * 7.0);
+          vA = tw * smoothstep(0.3, 1.5, -mv.z) * (1.0 - smoothstep(6.0, 9.0, -mv.z));
+          gl_PointSize = (0.022 + fract(aSeed * 3.7) * 0.03) * uScale / max(0.1, -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: /* glsl */`
+        uniform vec3 uColor; uniform float uAlpha; varying float vA;
+        void main() {
+          vec2 q = gl_PointCoord - 0.5;
+          float a = smoothstep(0.5, 0.0, length(q));
+          gl_FragColor = vec4(uColor * a * vA * uAlpha, 1.0);
+        }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    this.points = new THREE.Points(g, this.mat);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 6;
+    scene.add(this.points);
+    this.geo = g;
+    this.t = 0;
+  }
+  update(dt, camera, day, indoor = false) {
+    this.t += dt;
+    const cp = camera.position, R = this.R;
+    for (let i = 0; i < this.n; i++) {
+      const s = this.seed[i];
+      const o = i * 3;
+      this.rel[o] += (Math.sin(this.t * 0.3 + s) * 0.08 + 0.05) * dt;
+      this.rel[o + 1] += (Math.sin(this.t * 0.5 + s * 1.7) * 0.05 - 0.01) * dt;
+      this.rel[o + 2] += Math.cos(this.t * 0.4 + s * 1.3) * 0.06 * dt;
+      // カメラのまわりで、はみ出たら反対側へ
+      for (let k = 0; k < 3; k++) {
+        let v = this.rel[o + k] + (k === 0 ? cp.x : k === 1 ? cp.y : cp.z);
+        const c = k === 0 ? cp.x : k === 1 ? cp.y : cp.z;
+        if (v - c > R) v -= 2 * R; else if (v - c < -R) v += 2 * R;
+        this.rel[o + k] = v - c;
+        this.pos[o + k] = v;
+      }
+    }
+    this.geo.attributes.position.needsUpdate = true;
+    camera.getWorldDirection(_cd);
+    const facing = Math.max(0, _cd.dot(day.sunDir));
+    const golden = day.golden;
+    this.mat.uniforms.uAlpha.value = (indoor ? 0.9 : golden * (0.2 + 0.8 * facing * facing)) * (day.sunDir.y > -0.02 ? 1 : 0.2);
+    this.mat.uniforms.uColor.value.copy(day.sun.color).lerp(new THREE.Color(1, 1, 1), 0.3);
+    this.mat.uniforms.uTime.value = this.t;
+  }
+  setScale(h) { this.mat.uniforms.uScale.value = h * 0.42; }
+}
+
+// ------------------------------------------------------------
 // チュートリアルの目じるし（ピン型のアイコン＋足もとで広がる光の輪）
 // ------------------------------------------------------------
 function markerTexture(icon) {

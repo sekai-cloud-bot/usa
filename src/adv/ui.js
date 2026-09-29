@@ -4,7 +4,7 @@ const $ = (id) => document.getElementById(id);
 const _p = new THREE.Vector3();
 
 const ICONS = {
-  star: '★', nose: '👃', bolt: '⚡', flower: '✿', paw: '🐾',
+  star: '★', nose: '👃', bolt: '⚡', flower: '✿', paw: '🐾', heart: '♥', gift: '🎁', eye: '☀',
 };
 
 /** 画面の文字まわり（HUD・吹き出し・字幕・カード） */
@@ -100,26 +100,46 @@ export class UI {
     setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 500); }, 3600);
   }
 
-  friend(f, n, total, line, isNew, collected) {
-    const el = $('friend-card');
-    $('fc-dot').style.background = f.color;
-    $('fc-name').textContent = f.name;
-    $('fc-line').textContent = line;
-    $('fc-count').textContent = `ともだち ${n} / ${total}`;
-    $('fc-new').style.display = isNew ? '' : 'none';
+  /** できごとの数（右上） */
+  events(n, total) {
+    $('events-n').textContent = n;
+    $('events-total').textContent = `/${total}`;
+    if (n > 0) {
+      const pill = $('events-pill');
+      pill.classList.remove('pop');
+      void pill.offsetWidth;
+      pill.classList.add('pop');
+    }
+  }
+  /** 思い出カード（写真＋できごと）。続けて来たら順番に */
+  memory(m) {
+    this.memQ = this.memQ || [];
+    this.memQ.push(m);
+    if (!this.memBusy) this._nextMemory();
+  }
+  _nextMemory() {
+    const m = this.memQ.shift();
+    if (!m) { this.memBusy = false; return; }
+    this.memBusy = true;
+    const el = $('memory');
+    const img = $('m-img');
+    if (m.url) { img.src = m.url; el.classList.remove('nophoto'); } else { img.removeAttribute('src'); el.classList.add('nophoto'); }
+    el.style.setProperty('--kc', m.color);
+    $('m-kind').textContent = m.kindLabel;
+    $('m-new').style.display = m.isNew ? '' : 'none';
+    $('m-title').textContent = m.title;
+    $('m-line').textContent = m.line || '';
+    $('m-count').textContent = `できごと ${m.n} / ${m.total}`;
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');
-    clearTimeout(this.fcTimer);
-    this.fcTimer = setTimeout(() => el.classList.remove('show'), 3400);
-    $('friends-n').textContent = n;
-    const pill = $('friends-pill');
-    pill.classList.remove('pop');
-    void pill.offsetWidth;
-    pill.classList.add('pop');
-    void collected;
+    clearTimeout(this.memTimer);
+    this.memTimer = setTimeout(() => {
+      el.classList.remove('show');
+      setTimeout(() => this._nextMemory(), 450);
+    }, 3800);
   }
-  resetFriends() { $('friends-n').textContent = '0'; }
+  clockFF(on) { document.body.classList.toggle('ff', on); }
 
   action(label) {
     if (label === this.actionText) return;
@@ -143,7 +163,7 @@ export class UI {
     r.style.setProperty('--k', String(Math.min(1, k)));
   }
 
-  clock(hour, h0, h1) {
+  clock(hour, h0, h1, ff = false) {
     const hh = Math.floor(hour), mm = Math.floor((hour - hh) * 60);
     const s = `${hh}:${String(mm).padStart(2, '0')}`;
     if (s !== this.lastClock) {
@@ -151,9 +171,18 @@ export class UI {
       $('clock-text').textContent = s;
       const k = Math.min(1, Math.max(0, (hour - h0) / (h1 - h0)));
       $('clock-fill').style.width = `${k * 100}%`;
-      const left = Math.max(0, (h1 - hour) * 60);
-      $('clock-left').textContent = left > 0.5 ? `あと ${Math.floor(left / 60) ? Math.floor(left / 60) + '時間' : ''}${Math.round(left % 60)}分` : 'まもなく';
+      const left = (h1 - hour) * 60;
+      let t;
+      if (ff) t = '⏩ 早送り中';
+      else if (left <= 0) t = '電車 到着';
+      else if (left < 1) t = 'まもなく到着';
+      else {
+        const m = Math.ceil(left);
+        t = `電車まで ${Math.floor(m / 60) ? Math.floor(m / 60) + '時間' : ''}${m % 60 ? (m % 60) + '分' : ''}`;
+      }
+      $('clock-left').textContent = t;
       document.body.classList.toggle('dusk', hour > 17.3);
+      document.body.classList.toggle('late', hour >= h1);
     }
   }
   carry(label) {
@@ -198,7 +227,8 @@ export class UI {
     // 黒帯は伸びるアニメーションの途中でも、伸びきった高さで考える
     const cine = document.body.classList.contains('cine');
     const band = cine ? Math.max(this.letterTop().getBoundingClientRect().bottom, H * 0.1) : 0;
-    const top = band + 8;
+    // ふだんは上の目標の札（高さ 約56px）に重ならないように
+    const top = cine ? band + 8 : 64;
     const bottom = H - band - 8;
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i];

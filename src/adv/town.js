@@ -6,6 +6,7 @@ import {
 } from './props.js';
 import { tree, hedge, bush, grassField, flowerBed, waterMaterial, Petals, updateGrass } from './nature.js';
 import { Collision } from './collide.js';
+import { buildRiver, buildShrine } from './town2.js';
 import { buildRoom, ROOM, WINDOW } from '../room.js';
 import { buildDog, breedParams } from '../dogModel.js';
 import { mulberry32 } from '../util.js';
@@ -39,7 +40,7 @@ export const SCENT = [
 // 地面の部品：ワールド座標でUVを振るので、テクスチャの継ぎ目が出ない
 // ------------------------------------------------------------
 const gmats = new Map();
-function gmat(tex, color = 0xffffff, rough = 0.95, extra = {}) {
+export function gmat(tex, color = 0xffffff, rough = 0.95, extra = {}) {
   const k = tex.uuid + '|' + color + '|' + rough + JSON.stringify(extra);
   if (!gmats.has(k)) {
     const m = texMaterial(tex, color, rough, extra);
@@ -49,7 +50,7 @@ function gmat(tex, color = 0xffffff, rough = 0.95, extra = {}) {
   return gmats.get(k);
 }
 
-function worldUV(geo, scale) {
+export function worldUV(geo, scale) {
   const p = geo.attributes.position, n = geo.attributes.normal, uv = geo.attributes.uv;
   for (let i = 0; i < p.count; i++) {
     const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i));
@@ -60,7 +61,7 @@ function worldUV(geo, scale) {
   uv.needsUpdate = true;
 }
 
-function ground(g, x0, x1, z0, z1, material, scale = 4, y = 0) {
+export function ground(g, x0, x1, z0, z1, material, scale = 4, y = 0) {
   const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0);
   geo.rotateX(-Math.PI / 2);
   geo.translate((x0 + x1) / 2, y, (z0 + z1) / 2);
@@ -73,7 +74,7 @@ function ground(g, x0, x1, z0, z1, material, scale = 4, y = 0) {
 }
 
 /** 厚みのある地面（歩道・縁石・花壇の縁）。上に乗れる */
-function slab(g, col, x0, x1, z0, z1, h, material, scale = 2, y0 = 0, tag = null) {
+export function slab(g, col, x0, x1, z0, z1, h, material, scale = 2, y0 = 0, tag = null) {
   const geo = new THREE.BoxGeometry(x1 - x0, h, z1 - z0);
   geo.translate((x0 + x1) / 2, y0 + h / 2, (z0 + z1) / 2);
   worldUV(geo, scale);
@@ -86,7 +87,7 @@ function slab(g, col, x0, x1, z0, z1, h, material, scale = 2, y0 = 0, tag = null
 }
 
 /** 路面の線（白線など） */
-function paint(g, x0, z0, x1, z1, w, color = 0xf4f1ea, y = 0.012) {
+export function paint(g, x0, z0, x1, z1, w, color = 0xf4f1ea, y = 0.012) {
   const len = Math.hypot(x1 - x0, z1 - z0);
   const geo = new THREE.PlaneGeometry(len, w);
   geo.rotateX(-Math.PI / 2);
@@ -99,7 +100,7 @@ function paint(g, x0, z0, x1, z1, w, color = 0xf4f1ea, y = 0.012) {
   return m;
 }
 
-function decal(g, text, x, z, w, h, ry = 0, color = '#f4f1ea', size = 150) {
+export function decal(g, text, x, z, w, h, ry = 0, color = '#f4f1ea', size = 150) {
   const t = canvasTex(512, 256, (c, W, H) => {
     c.clearRect(0, 0, W, H);
     c.fillStyle = color;
@@ -123,7 +124,7 @@ function decal(g, text, x, z, w, h, ry = 0, color = '#f4f1ea', size = 150) {
 }
 
 /** 看板（両面ではなく片面の文字板） */
-function signBoard(g, text, x, y, z, w, h, ry = 0, opts = {}) {
+export function signBoard(g, text, x, y, z, w, h, ry = 0, opts = {}) {
   const t = signTex(text, { w: 512, h: Math.round(512 * h / w), size: opts.size || Math.round(512 * h / w * 0.62), ...opts });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: opts.glow ?? 0.12, roughness: 0.7 }));
   m.position.set(x, y, z);
@@ -206,7 +207,7 @@ function cityMaterial() {
   cityMat.needsUpdate = true;
   return cityMat;
 }
-function cityBlock(g, x, z, w, d, h, color) {
+export function cityBlock(g, x, z, w, d, h, color) {
   const geo = new THREE.BoxGeometry(w, h, d);
   geo.translate(x, h / 2, z);
   const p = geo.attributes.position, n = geo.attributes.normal, uv = geo.attributes.uv;
@@ -341,7 +342,10 @@ export function buildTown(scene, renderer, day) {
 
   // 一番下の地面（町の外まで）
   const base = D('base');
-  ground(base, -160, 320, -300, 200, gmat(TEX.sidewalk, 0xb9b4aa, 1), 3, -0.02);
+  // 川の谷（z -166..-110）はあけておく
+  const baseM = gmat(TEX.grass, 0xb9b596, 1);
+  ground(base, -160, 320, -110, 200, baseM, 3, -0.02);
+  ground(base, -160, 320, -300, -166, baseM, 3, -0.02);
 
   // ==========================================================
   // 1) 家（プロローグの部屋）と庭
@@ -627,21 +631,7 @@ export function buildTown(scene, renderer, day) {
   }
   col.addBox(-31, 48, 11.3, 11.5, 0, 1.4, 'wall');
   col.addBox(-31, 48, 11.75, 12.4, 0, 4, 'thin');
-  // 西の突き当たり：小さなお社
-  {
-    const sx = -28.6, sz = 8.45;
-    box(lane, 1.6, 0.35, 1.4, sx, 0, sz, 0xb9b3aa);
-    box(lane, 0.9, 0.8, 0.8, sx, 0.35, sz, 0xb98652);
-    for (const s of [-1, 1]) { const r = box(lane, 0.7, 0.06, 1.1, sx + s * 0.25, 1.28, sz, 0x5b4a40); r.rotation.z = -s * 0.5; }
-    // 鳥居
-    for (const s of [-1, 1]) cyl(lane, 0.07, 0.08, 1.9, sx + 1.5, 0, sz + s * 0.6, 0xd8452f, 8);
-    box(lane, 0.14, 0.12, 1.8, sx + 1.5, 1.85, sz, 0xd8452f);
-    box(lane, 0.18, 0.12, 1.5, sx + 1.5, 1.55, sz, 0xd8452f);
-    col.addBox(sx - 0.8, sx + 0.8, sz - 0.7, sz + 0.7, 0, 1.1, 'shrine');
-    blockWall(lane, -31, -30.2, 5.6, 11.3, 1.6);
-    col.addBox(-31, -29.8, 5.6, 11.3, 0, 1.6, 'wall');
-    anchors.shrine = new THREE.Vector3(sx + 1.2, 0, sz);
-  }
+  // 西の突き当たりは神社の石段（town2.js の buildShrine）
   // 電柱と電線・街灯
   const poleTops = [];
   for (const x of [-22, -6, 9, 24, 38]) {
@@ -876,6 +866,8 @@ export function buildTown(scene, renderer, day) {
   strip(pathPts, pathW, M.path, 0.012);
   strip(pathLoop, 2.4, M.path, 0.011);
   strip([[36, -66], [44, -72], [40.2, -80]], 2.2, M.path, 0.013);
+  // 池のまわりの道から、北の路地（川）へ
+  strip([[54.5, -89.2], [56.6, -93], [57.5, -97.5]], 2.2, M.path, 0.014);
   // 池
   const POND = { x: 52, z: -80, rx: 8.6, rz: 5.8 };
   {
@@ -1015,8 +1007,11 @@ export function buildTown(scene, renderer, day) {
   col.addBox(47, 79, -50.1, -48.9, 0, 1.2, 'hedge');
   hedge(park, 26, -49.5, 26, -96, 1.1, 43);
   col.addBox(25.4, 26.6, -96, -49.5, 0, 1.2, 'hedge');
-  hedge(park, 26, -96, 79, -96, 1.1, 44);
-  col.addBox(26, 79, -96.6, -95.4, 0, 1.2, 'hedge');
+  // 北の生け垣は、川への路地の所（x 53.8..61.2）だけあいている
+  hedge(park, 26, -96, 53.8, -96, 1.1, 44);
+  hedge(park, 61.2, -96, 79, -96, 1.1, 47);
+  col.addBox(26, 53.8, -96.6, -95.4, 0, 1.2, 'hedge');
+  col.addBox(61.2, 79, -96.6, -95.4, 0, 1.2, 'hedge');
   hedge(park, 79, -49.5, 79, -69, 1.1, 45);
   hedge(park, 79, -75, 79, -96, 1.1, 46);
   col.addBox(78.4, 79.6, -69, -49.5, 0, 1.2, 'hedge');
@@ -1042,7 +1037,7 @@ export function buildTown(scene, renderer, day) {
   }, 22, -0.01);
   // 公園の外（西・北）の家並み
   for (let i = 0; i < 5; i++) house(park, 20.5, -56 - i * 9.5, { w: 9, d: 8, floors: 2 }, -Math.PI / 2);
-  for (let i = 0; i < 6; i++) house(park, 30 + i * 9.2, -102, { w: 8.5, d: 8, floors: 2 + (i % 2) });
+  for (let i = 0; i < 6; i++) if (i !== 3) house(park, 30 + i * 9.2, -102, { w: 8.5, d: 8, floors: 2 + (i % 2) });
 
   // ==========================================================
   // 5) 大通りと横断歩道
@@ -1294,8 +1289,9 @@ export function buildTown(scene, renderer, day) {
       box(plaza, w, 0.3, 1.4, (x0 + x1) / 2, 2.8, fz + face * 0.7, colr);
     }
   };
-  plazaBldg(95, 113, -110, -100, 14, 'ひだまり百貨店', 0xb4452f, 1);
-  plazaBldg(113, 130, -110, -100, 10, 'ベーカリー 麦', 0x8a5a3a, 1);
+  // 北側の2つのビルのあいだ（x 108.5..115.5）は、河川敷への路地
+  plazaBldg(95, 108.5, -110, -100, 14, 'ひだまり百貨店', 0xb4452f, 1);
+  plazaBldg(115.5, 130, -110, -100, 10, 'ベーカリー 麦', 0x8a5a3a, 1);
   plazaBldg(95, 110, -44, -34, 8, 'ひだまりマート', 0x3e8fd8, -1);
   plazaBldg(110, 130, -44, -34, 16, 'カフェ ことり', 0x3f8f6a, -1);
   // 駅舎
@@ -1399,7 +1395,7 @@ export function buildTown(scene, renderer, day) {
     for (const s of [-1, 1]) box(station, 0.25, 1.2, 900, x + s * 3.7, y, -150, 0xcfc8bb);
     for (const s of [-0.72, 0.72]) box(station, 0.08, 0.14, 900, x + s, y, -150, mat(0x8a8a88, { metal: 0.6, rough: 0.4 }), { cast: false });
     for (let z = -590; z < 290; z += 16) {
-      if (z > -110 && z < -34) continue;
+      if (z > -178 && z < -34) continue;   // 駅と、川の鉄橋
       box(station, 1.6, y - 0.8, 1.6, x, 0, z, 0xcfc8bb);
     }
     // ホームの屋根
@@ -1423,17 +1419,25 @@ export function buildTown(scene, renderer, day) {
   const farBlock = (x, z, w, d, h) => cityBlock(far, x, z, w, d, h, fcols[Math.floor(fr() * fcols.length)]);
   // 大通り沿い
   for (let z = -250; z < 110; z += 16) {
-    if (z > -114 && z < -36) continue;
+    if (z > -178 && z < -36) continue;
     farBlock(73, z, 12, 14, 7 + fr() * 8);
     farBlock(103 + fr() * 3, z, 14, 13, 9 + fr() * 12);
   }
   // 駅の向こう
-  for (let z = -250; z < 110; z += 18) farBlock(162 + fr() * 6, z, 16, 15, 10 + fr() * 14);
-  for (let z = -250; z < 110; z += 22) farBlock(188 + fr() * 10, z, 18, 18, 14 + fr() * 18);
+  for (let z = -250; z < 110; z += 18) { const x = 162 + fr() * 6, h = 10 + fr() * 14; if (z > -178 && z < -100) continue; farBlock(x, z, 16, 15, h); }
+  for (let z = -250; z < 110; z += 22) { const x = 188 + fr() * 10, h = 14 + fr() * 18; if (z > -178 && z < -100) continue; farBlock(x, z, 18, 18, h); }
   // 南・西・北の住宅街の向こう
   for (let x = -60; x < 70; x += 16) farBlock(x, 40 + fr() * 6, 14, 12, 8 + fr() * 10);
-  for (let x = -60; x < 70; x += 18) farBlock(x, -130 - fr() * 6, 15, 12, 10 + fr() * 14);
-  for (let z = -120; z < 40; z += 16) farBlock(-48 - fr() * 6, z, 12, 14, 8 + fr() * 10);
+  // 川の北（向こう岸の奥）と、神社の森のさらに西
+  for (let x = -60; x < 70; x += 18) farBlock(x, -205 - fr() * 6, 15, 12, 10 + fr() * 14);
+  for (let z = -100; z < 40; z += 16) farBlock(-140 - fr() * 6, z, 12, 14, 8 + fr() * 10);
+
+  // ==========================================================
+  // 8) ひだまり川と、ひだまり神社（town2.js）
+  // ==========================================================
+  const ctx = { scene, col, D, pools, anchors, dynamic, day, M, house, petalsEmit };
+  buildRiver(ctx);
+  buildShrine(ctx);
   // 商店街の裏手
   for (let z = -45; z < -30; z += 11) house(far, 26.5, z, { w: 9, d: 9, floors: 3, flat: true }, -Math.PI / 2);
   for (let z = -40; z < 0; z += 12) house(far, 60.5, z, { w: 10, d: 10, floors: 4, flat: true }, Math.PI / 2);
@@ -1444,7 +1448,7 @@ export function buildTown(scene, renderer, day) {
   // ==========================================================
   for (const g of Object.values(districts)) bake(g);
   // 遠景のビルは影を落とさない
-  for (const k of ['far', 'base']) districts[k].traverse((o) => { if (o.isMesh) o.castShadow = false; });
+  for (const k of ['far', 'base', 'farbank']) districts[k].traverse((o) => { if (o.isMesh) o.castShadow = false; });
   // 看板・旗など結合できなかった細かい物は、地区ごとに遠いと描かない
   const details = [];
   for (const [name, g] of Object.entries(districts)) {
@@ -1473,7 +1477,7 @@ export function buildTown(scene, renderer, day) {
         const inRoom = camPos.x > ROOM.minX && camPos.x < ROOM.maxX && camPos.z > ROOM.minZ && camPos.z < ROOM.maxZ && camPos.y < ROOM.h;
         if (inRoom !== this._inRoom) {
           this._inRoom = inRoom;
-          for (const k of ['street', 'park', 'road', 'plaza', 'station']) districts[k].visible = !inRoom;
+          for (const k of ['street', 'park', 'road', 'plaza', 'station', 'river', 'farbank', 'shrine']) districts[k].visible = !inRoom;
         }
       }
       if (focus) {

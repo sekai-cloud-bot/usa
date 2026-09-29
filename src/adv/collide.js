@@ -8,6 +8,21 @@ export class Collision {
     this.circles = [];
     this.grid = new Map();
     this.cgrid = new Map();
+    this.terrains = [];   // 起伏のある地面（川の土手など）{ x0, x1, z0, z1, fn(x, z) }
+  }
+
+  /** 起伏のある地面。範囲の中では地面の高さを fn(x, z) にする（範囲外は 0） */
+  addTerrain(x0, x1, z0, z1, fn) {
+    const t = { x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1), fn };
+    this.terrains.push(t);
+    return t;
+  }
+  /** 箱をのぞいた、地面そのものの高さ */
+  baseAt(x, z) {
+    for (const t of this.terrains) {
+      if (x >= t.x0 && x <= t.x1 && z >= t.z0 && z <= t.z1) return t.fn(x, z);
+    }
+    return 0;
   }
 
   _cells(x0, x1, z0, z1, fn) {
@@ -52,7 +67,7 @@ export class Collision {
 
   /** 足元の高さ（乗れる面の一番上） */
   groundAt(x, z, r, footY, step = 0.2) {
-    let g = 0;
+    let g = this.terrains.length ? this.baseAt(x, z) : 0;
     this.support = null;
     const rr = r * 0.55;
     for (const b of this.near(x, z, r)) {

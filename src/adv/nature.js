@@ -246,6 +246,61 @@ export function updateGrass(camPos, maxDist = 60) {
   }
 }
 
+/** 水辺の葦（背の高い草）。ground(x,z) で根元の高さ */
+const reedMat = windMaterial({ sway: 0.22, side: THREE.DoubleSide, grass: 1.3, trans: 0.5, self: 0.03, rough: 0.85 });
+export function reeds(g, areas, count, ground, seed = 3) {
+  const r = mulberry32(seed);
+  const pos = [], nor = [], col = [];
+  for (let b = 0; b < 7; b++) {
+    const a = r() * Math.PI * 2, d = r() * 0.12;
+    const bx = Math.cos(a) * d, bz = Math.sin(a) * d;
+    const hgt = 0.8 + r() * 0.6, w = 0.018 + r() * 0.01, lean = (r() - 0.5) * 0.4, rot = r() * Math.PI;
+    const cx = Math.cos(rot), sz = Math.sin(rot);
+    const pt = (u, v) => { const ww = w * (1 - v * 0.9) * u; const off = lean * v * v * hgt; return [bx + ww * cx + off * sz, v * hgt, bz + ww * sz - off * cx]; };
+    const rows = [0, 0.35, 0.7, 1];
+    for (let k = 0; k < rows.length - 1; k++) {
+      const a0 = pt(-1, rows[k]), a1 = pt(1, rows[k]), b0 = pt(-1, rows[k + 1]), b1 = pt(1, rows[k + 1]);
+      pos.push(...a0, ...a1, ...b1, ...a0, ...b1, ...b0);
+      for (let i = 0; i < 6; i++) { nor.push(0, 1, 0); col.push(1, 1, 1); }
+    }
+    // 穂
+    if (b < 3) {
+      const tip = pt(0, 1);
+      const pg = [tip[0] - 0.02, tip[1] - 0.18, tip[2], tip[0] + 0.02, tip[1] - 0.18, tip[2], tip[0], tip[1] + 0.02, tip[2]];
+      pos.push(...pg);
+      for (let i = 0; i < 3; i++) { nor.push(0, 1, 0); col.push(1.25, 1.05, 0.8); }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const mesh = new THREE.InstancedMesh(geo, reedMat, count);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), ax = new THREE.Vector3(0, 1, 0);
+  const c = new THREE.Color();
+  const totalA = areas.reduce((a, [x0, z0, x1, z1]) => a + Math.abs((x1 - x0) * (z1 - z0)), 0);
+  let n = 0;
+  for (const [x0, z0, x1, z1] of areas) {
+    const k = Math.round(count * Math.abs((x1 - x0) * (z1 - z0)) / totalA);
+    for (let i = 0; i < k && n < count; i++) {
+      const x = x0 + r() * (x1 - x0), z = z0 + r() * (z1 - z0);
+      q.setFromAxisAngle(ax, r() * Math.PI * 2);
+      const sc = 0.75 + r() * 0.5;
+      s.set(sc, sc * (0.8 + r() * 0.4), sc);
+      p.set(x, ground(x, z) - 0.05, z);
+      m4.compose(p, q, s);
+      mesh.setMatrixAt(n, m4);
+      mesh.setColorAt(n, c.setHSL(0.16 + r() * 0.08, 0.35 + r() * 0.15, 0.36 + r() * 0.1));
+      n++;
+    }
+  }
+  mesh.count = n;
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  return mesh;
+}
+
 /** 花壇の花（インスタンス） */
 export function flowerBed(g, x0, z0, x1, z1, count = 60, seed = 9, palette = [0xf28aa8, 0xf6d35a, 0xffffff, 0xf2735a, 0xb58ae0]) {
   const r = mulberry32(seed);
@@ -319,36 +374,48 @@ export function waterMaterial(day, { deep = 0x2f6a72, shallow = 0x6fa89a, flow =
       uniform vec3 uDeep; uniform vec3 uShallow; uniform float uFlow; uniform float uScale; uniform float uLamp; uniform vec4 uEllipse;
       varying vec3 vWorld;
       varying vec2 vUv;
-      vec3 wave(vec2 p, float t) {
-        return vec3(
-          sin(p.x * 1.9 + t * 1.3) * 0.05 + sin(p.x * 4.1 - p.y * 2.7 + t * 2.1) * 0.03 + sin(p.y * 6.3 + t * 2.9) * 0.015 + sin(p.x * 11.0 + p.y * 7.0 + t * 4.0) * 0.008,
-          1.0,
-          cos(p.y * 2.3 + t * 1.1) * 0.05 + cos(p.x * 3.7 + p.y * 3.1 - t * 1.7) * 0.03 + cos(p.x * 9.0 - p.y * 8.0 + t * 3.3) * 0.008);
+      // 向きのちがう小さな波を重ねる（同じ模様がならんで石畳のように見えないように）
+      vec2 wave(vec2 p, float t) {
+        vec2 g = vec2(0.0);
+        g += vec2(0.83, 0.55) * cos(dot(p, vec2(0.83, 0.55)) * 1.7 + t * 1.2) * 0.03;
+        g += vec2(-0.41, 0.91) * cos(dot(p, vec2(-0.41, 0.91)) * 2.9 + t * 1.9) * 0.026;
+        g += vec2(0.97, -0.26) * cos(dot(p, vec2(0.97, -0.26)) * 4.3 + t * 2.4) * 0.02;
+        g += vec2(-0.72, -0.69) * cos(dot(p, vec2(-0.72, -0.69)) * 6.1 + t * 3.1) * 0.015;
+        g += vec2(0.28, 0.96) * cos(dot(p, vec2(0.28, 0.96)) * 9.7 + t * 3.9) * 0.011;
+        g += vec2(0.6, -0.8) * cos(dot(p, vec2(0.6, -0.8)) * 13.3 + t * 4.6) * 0.008;
+        g += vec2(-0.95, 0.31) * cos(dot(p, vec2(-0.95, 0.31)) * 19.1 + t * 5.7) * 0.005;
+        return g;
       }
       void main() {
         vec2 p = vWorld.xz * uScale;
         p.x -= uTime * uFlow;
         float t = uTime;
-        vec3 n = normalize(wave(p, t));
+        float dist = length(cameraPosition - vWorld);
+        // 遠くの波は細かすぎて模様になるので、だんだん静かに
+        vec2 g = wave(p, t) * (1.0 / (1.0 + dist * 0.025));
+        vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
         vec3 v = normalize(cameraPosition - vWorld);
         float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0);
         vec3 r = reflect(-v, n);
-        vec3 sky = mix(uSky, uZenith, clamp(r.y * 1.4, 0.0, 1.0));
+        vec3 sky = mix(uSky, uZenith, clamp(r.y * 1.4, 0.0, 1.0)) * 0.9;
         // 太陽の方向の空は明るく（夕焼けが水に映る）
         float sd = max(dot(normalize(vec3(r.x, max(r.y, 0.0), r.z)), normalize(uSunDir)), 0.0);
-        sky += uSunColor * (pow(sd, 6.0) * 0.5 + pow(sd, 40.0) * 0.8);
+        sky += uSunColor * (pow(sd, 6.0) * 0.4 + pow(sd, 40.0) * 0.7);
+        // 低い角度の映りこみは、向こう岸の草や木（暗い緑）
+        vec3 bank = vec3(0.07, 0.1, 0.07) + uSky * 0.1;
+        vec3 refl = mix(bank, sky, smoothstep(0.02, 0.24, r.y));
         float edge;
         if (uEllipse.z > 0.0) {
           vec2 e = (vWorld.xz - uEllipse.xy) / uEllipse.zw;
           edge = 1.0 - smoothstep(0.55, 1.0, length(e));
         } else edge = smoothstep(0.0, 0.18, vUv.y) * smoothstep(0.0, 0.18, 1.0 - vUv.y);
-        vec3 body = mix(uShallow, uDeep, edge);
-        vec3 col = mix(body, sky, 0.18 + 0.72 * fres);
-        float spec = pow(max(dot(r, normalize(uSunDir)), 0.0), 220.0);
-        col += uSunColor * spec * 4.0;
-        // 細かいきらめき
-        float gl = pow(max(dot(r, normalize(uSunDir)), 0.0), 18.0) * step(0.985, fract(sin(dot(floor(p * 9.0), vec2(12.9898, 78.233))) * 43758.5453 + t * 0.4));
-        col += uSunColor * gl * 1.4;
+        vec3 body = mix(uShallow, uDeep, edge) * (0.75 + 0.25 * uSky);
+        vec3 col = mix(body, refl, 0.18 + 0.72 * fres);
+        // 太陽の光の道（きらきら）
+        float sdot = max(dot(r, normalize(uSunDir)), 0.0);
+        col += uSunColor * (pow(sdot, 300.0) * 5.0 + pow(sdot, 30.0) * 0.25);
+        float gl = pow(sdot, 14.0) * step(0.975, fract(sin(dot(floor(p * 9.0), vec2(12.9898, 78.233))) * 43758.5453 + t * 0.4));
+        col += uSunColor * gl * 1.8;
         col += vec3(1.0, 0.75, 0.45) * uLamp * 0.06 * fres;
         gl_FragColor = vec4(col, mix(0.72, 0.94, edge));
         #include <fog_fragment>

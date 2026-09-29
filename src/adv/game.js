@@ -1,43 +1,34 @@
 import * as THREE from 'three';
-import { Person, Cat, Crow, Pigeons, Ducks, Traffic, Train, makeItem, makeWear } from './actors.js';
-import { PointFX, ScentTrail, HintMarker } from './fx.js';
+import { Person, Traffic, Train, makeItem, makeWear } from './actors.js';
+import { PointFX, ScentTrail, HintMarker, Motes } from './fx.js';
 import { Z, DIG, SCENT, ROAD, TRACK } from './town.js';
-import { Dog } from '../dog.js';
-import { breedParams } from '../dogModel.js';
+import { RIVER, SHRINE } from './town2.js';
+import { EventDirector, EVENTS, FRIEND_IDS, KINDS } from './events.js';
+import { installHappenings } from './happen.js';
 import { audio } from '../audio.js';
-import { clamp, damp, lerp, smooth, dampAngle, angleDiff } from '../util.js';
+import { clamp, damp, lerp, smooth } from '../util.js';
 import { ROOM, BED } from '../room.js';
 
-export const FRIENDS = [
-  { id: 'cat', name: 'ねこのミケ', where: '路地の塀の上', color: '#f2a45a' },
-  { id: 'crow', name: 'カラスのクロ', where: '商店街のアーチ', color: '#3b3f4a' },
-  { id: 'grandma', name: '魚屋のおばあちゃん', where: 'うおまさ', color: '#e8604c' },
-  { id: 'florist', name: '花屋のおねえさん', where: 'はなぞの', color: '#3f8f6a' },
-  { id: 'kid', name: 'ボールの男の子', where: 'さくら公園', color: '#f2c23a' },
-  { id: 'shiba', name: '柴犬のこむぎ', where: 'さくら公園', color: '#d9843f' },
-  { id: 'guard', name: 'みどりのおじさん', where: '駅前通りの横断歩道', color: '#6fae7c' },
-  { id: 'pigeons', name: '駅前のハトたち', where: '駅前広場', color: '#9aa0ab' },
-];
+export { EVENTS, KINDS };
 export const GIFTS = {
-  none: { label: 'なし', line: (n) => `…${n}？ むかえに来てくれたの？ ひとりで？`, stamp: 'むかえにきた' },
-  stick: { label: 'りっぱな枝', line: () => 'えっ、これ おみやげ？ ふふ、りっぱな枝だね', stamp: '枝をプレゼント' },
-  cap: { label: 'ぴかぴかの王冠', line: () => 'きらきら…！ 宝物、見せにきてくれたんだね', stamp: '宝物をみせた' },
-  ball: { label: 'だれかのボール', line: () => 'そのボール…だれの？ あとで一緒に返しにいこうね', stamp: 'ボールをくわえてきた' },
-  sakura: { label: '桜の枝', line: () => '春を持ってきてくれたの？ ありがとう', stamp: '桜をプレゼント' },
-  sunflower: { label: 'ひまわり', line: (n) => `お花…！ ${n}、ありがとう。最高のおかえりだよ`, stamp: 'ひまわりをプレゼント' },
-};
-export const DETOURS = {
-  wall: '塀の上をおさんぽ',
-  slide: 'すべり台',
-  statue: 'まちあわせの犬とならんだ',
-  shrine: 'おやしろにおまいり',
-  dash: '商店街を全力ダッシュ',
+  none: { label: 'なし', line: (n) => `…${n}？ むかえに来てくれたの？ ひとりで？` },
+  stick: { label: 'りっぱな枝', line: () => 'えっ、これ おみやげ？ ふふ、りっぱな枝だね' },
+  cap: { label: 'ぴかぴかの王冠', line: () => 'きらきら…！ 宝物、見せにきてくれたんだね' },
+  ball: { label: 'だれかのボール', line: () => 'そのボール…だれの？ あとで一緒に返しにいこうね' },
+  sakura: { label: '桜の枝', line: () => '春を持ってきてくれたの？ ありがとう' },
+  sunflower: { label: 'ひまわり', line: (n) => `お花…！ ${n}、ありがとう。最高のおかえりだよ` },
+  sock: { label: 'あの人のくつした', line: () => 'あっ、わたしのくつした！ …さがしてたんだよ、それ' },
+  coin: { label: '100円玉', line: () => '100円…？ ひろったの？ 帰りにアイス、はんぶんこしよっか' },
+  omikuji: { label: 'おみくじ（大吉）', line: () => '大吉！？ …うん。いいこと、いまあったよ' },
+  figure: { label: 'ガチャの柴犬', line: () => 'ちっちゃい柴犬…！ ふふ、おそろいだね' },
 };
 
 const AREAS = [
-  { id: 'lane', name: 'ひだまり二丁目', sub: '路地', test: (p) => p.z >= 5.7 && p.z <= 11.3 && p.x < 48 && p.x > -31 },
+  { id: 'shrine', name: 'ひだまり神社', sub: '石段の上のおやしろ', test: (p) => p.x < -33.6 && p.z > -30 && p.z < 30 },
+  { id: 'lane', name: 'ひだまり二丁目', sub: '路地', test: (p) => p.z >= 5.7 && p.z <= 11.3 && p.x < 48 && p.x >= -33.6 },
   { id: 'street', name: 'ひだまり商店街', sub: '夕方の買いもの', test: (p) => p.x > 38.5 && p.x < 47.5 && p.z < 4.8 && p.z > -49.2 },
   { id: 'park', name: 'さくら公園', sub: '池とすべり台', test: (p) => p.x > 26 && p.x < 79 && p.z < -50 && p.z > -96 },
+  { id: 'river', name: 'ひだまり川', sub: '夕日の河川敷', test: (p) => p.z < -105.5 && p.z > -170 },
   { id: 'road', name: '駅前通り', sub: '信号は青で', test: (p) => p.x >= 79 && p.x <= 95 && p.z < -44 && p.z > -100 },
   { id: 'plaza', name: 'ひだまり駅', sub: '18:00 着', test: (p) => p.x > 95 && p.z < -44 && p.z > -100 },
 ];
@@ -45,25 +36,29 @@ const AREAS = [
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
-const START_HOUR = 16.5;
-const ARRIVE_HOUR = 18;
-const HOUR_PER_SEC = 1 / 230;   // 1時間半 ≒ 5分45秒（夕方の光の中を歩く）
+export const START_HOUR = 16.5;
+export const ARRIVE_HOUR = 18;
+// 1時間半 ≒ 12分（夕方の光の中を、寄り道しながら歩く）
+const HOUR_PER_SEC = 1.5 / 720;
 
 export class Game {
   constructor(ctx) {
     Object.assign(this, ctx); // scene, camera, renderer, day, town, player, cam, ctl, post, ui, save
-    const { scene, town } = this;
-    this.A = town.anchors;
-    this.fx = new PointFX(scene, 600, { additive: true, gain: 1.6 });
-    this.dust = new PointFX(scene, 300, { additive: false, gain: 1 });
+    const { scene } = this;
+    this.A = this.town.anchors;
+    this.fx = new PointFX(scene, 900, { additive: true, gain: 1.6 });
+    this.dust = new PointFX(scene, 400, { additive: false, gain: 1 });
+    this.motes = new Motes(scene, 110);
     this.trail = new ScentTrail(scene, SCENT, (x, z) => this.heightAt(x, z));
     // チュートリアルの目じるし：リビングの窓のすき間／庭の柵の下のやわらかい土
     this.markWindow = new HintMarker(scene, 'nose', V(ROOM.maxX - 0.45, 0, 0.3), { ring: 0.42, height: 0.72 });
     this.markDig = new HintMarker(scene, 'dig', V(DIG.x, 0.05, DIG.z - 0.45), { ring: 0.62, height: 0.85 });
     this.co = [];
     this.people = [];
-    this.buildActors();
-    this.buildItems();
+    this.solid = [];
+    this.items = [];
+    this.hooks = { update: [], interact: [], sit: [], bark: [], area: [], pick: new Map() };
+    this.photoQueue = [];
     this.state = 'idle';
     this.t = 0;
     this.hour = START_HOUR;
@@ -72,127 +67,48 @@ export class Game {
     this.digT = 0;
     this.area = null;
     this.flags = {};
-    this.friends = new Set();
-    this.detours = new Set();
     this.trainT = 20;
-    this.actionLabel = null;
     this.hintT = 0;
-    this.lastSpeed = 0;
+    this.ev = new EventDirector(this);
+    this.buildCore();
+    installHappenings(this);
   }
 
   // ------------------------------------------------------------
-  // 住人
+  // しくみ
   // ------------------------------------------------------------
-  buildActors() {
-    const { scene, town } = this;
-    const A = this.A;
-    const P = (o, x, z, h = 0, y = 0) => { const p = new Person(scene, o); p.place(x, z, h, y); this.people.push(p); return p; };
-    this.grandma = P({ name: 'おばあちゃん', hair: 0xd8d2cc, hairStyle: 'bun', top: 0x8a7fb0, bottom: 0x5b4a40, apron: 0xf2f0ea, hat: 'kerchief', hatColor: 0xe8604c, skirt: true, scale: 0.92, skin: 0xf2cdb2 }, 40.2, 1.0, Math.PI / 2);
-    this.florist = P({ name: '花屋さん', hair: 0x5a3a2a, hairStyle: 'long', top: 0xf6efe2, apron: 0x3f8f6a, bottom: 0x6f7fa8 }, 40.2, -40.2, Math.PI / 2);
-    this.butcher = P({ name: '肉屋さん', hairStyle: 'bald', hair: 0x3b2a22, top: 0xffffff, apron: 0xd9d4ca, hat: 'cap', hatColor: 0xffffff, bottom: 0x4a5468 }, 45.9, -6.2, -Math.PI / 2);
-    const shopper = (o, pts, sp = 1.0) => { const p = P(o, pts[0].x, pts[0].z); p.follow(pts); p.speed = sp; return p; };
-    shopper({ top: 0xe8a0a0, bottom: 0x6f7fa8, bag: 0xf2e6cf, hairStyle: 'long', hair: 0x4a3428 }, [V(41.2, 0, 3), V(41.4, 0, -46), V(44.8, 0, -46), V(44.6, 0, 3)], 0.95);
-    shopper({ top: 0x6f8fb0, bottom: 0x3b3f45, hairStyle: 'short', hair: 0x2a2020, glasses: true }, [V(44.5, 0, -44), V(44.2, 0, 2), V(41.6, 0, 2), V(41.8, 0, -44)], 1.1);
-    shopper({ top: 0xf2d29b, bottom: 0x7a5a3a, hairStyle: 'bun', hair: 0xd8d2cc, skirt: true, bag: 0x9c6b45, scale: 0.9 }, [V(42, 0, -20), V(42.2, 0, -36), V(44, 0, -36), V(44, 0, -20)], 0.6);
-    shopper({ kid: true, top: 0x9fd4b0, bottom: 0x3e6ea8, hat: 'yellow' }, [V(43.6, 0, 4), V(43.4, 0, -12), V(42.4, 0, -12), V(42.6, 0, 4)], 1.3);
-    shopper({ top: 0xb58ae0, bottom: 0x4a5468, hairStyle: 'short', hair: 0x6a4330, bag: 0x3e6ea8 }, [V(-20, 0, 7.4), V(36, 0, 7.4), V(36, 0, 9.6), V(-20, 0, 9.6)], 1.0);
-    // 公園
-    this.kid = P({ name: '男の子', kid: true, top: 0xf6d35a, bottom: 0x3e6ea8, hat: 'yellow' }, 37.2, -62.8, -0.6);
-    // ベンチに座る人は、ベンチと同じ位置・向きから座る場所を決める
-    const sitOn = (p, b) => p.sitOn(b.x, b.z, b.ry, b.y);
-    this.oldman = P({ name: 'おじいさん', hairStyle: 'bald', hair: 0xd8d2cc, top: 0x7a8a6a, bottom: 0x5b5b5b, glasses: true, hat: 'straw' }, 0, 0);
-    sitOn(this.oldman, A.benches.park[1]);
-    const jog = P({ top: 0xe8604c, bottom: 0x3b3f45, hairStyle: 'short', hat: 'cap', hatColor: 0x3b3f45 }, 52, -70.5);
-    const loop = [];
-    for (let i = 0; i < 16; i++) { const a = -(i / 16) * Math.PI * 2; loop.push(V(52 + Math.cos(a) * 12.5, 0, -80 + Math.sin(a) * 9.5)); }
-    jog.follow(loop);
-    jog.speed = 2.6;
-    // 横断歩道
-    this.guard = P({ name: 'みどりのおじさん', top: 0xf2f0ea, vest: 0xf2c23a, hat: 'cap', hatColor: 0x3f8f6a, bottom: 0x4a5468, flag: true, glasses: true, hair: 0xd8d2cc }, 80.0, -75.9, Math.PI / 2, 0.15);
-    // 駅前
-    P({ top: 0x3b4a5e, bottom: 0x3b3f45, hairStyle: 'short', bag: 0x5b4033 }, 110.2, -58.2, Math.PI, 0.15);
-    P({ top: 0xf2c6a0, bottom: 0x6f7fa8, hairStyle: 'long', hair: 0x6a4330, skirt: true }, 114.4, -58.6, -2.4, 0.15);
-    const wait = P({ top: 0x9fcfe8, bottom: 0x4a5468, hairStyle: 'short', hair: 0x3b2a22, glasses: true }, 0, 0);
-    sitOn(wait, A.benches.plaza[0]);
-    // 飼い主（最後に改札から）
-    this.owner = P({ name: '', coat: true, top: 0xd9a676, inner: 0xf6efe2, bottom: 0x3f4a5e, bag: 0xf2c14e, hairStyle: 'long', hair: 0x3b2a22, scarf: 0xc9574a, shoes: 0x6b4a3e }, A.gateInside.x + 3, A.gateInside.z, -Math.PI / 2, 0.15);
-    this.owner.root.visible = false;
-    this.owner.hidden = true;
-    this.commuters = [];
-    for (let i = 0; i < 3; i++) {
-      const c = P({ top: [0x3b4a5e, 0xd9d4ca, 0x8a2f35][i], bottom: [0x3b3f45, 0x4a5468, 0x3b3f45][i], hairStyle: ['short', 'long', 'bun'][i], hair: 0x2a2020, bag: [0x5b4033, null, 0xf2e6cf][i] }, A.gateInside.x + 3, -72, -Math.PI / 2, 0.15);
-      c.root.visible = false;
-      c.hidden = true;
-      this.commuters.push(c);
-    }
-    // 動物
-    this.cat = new Cat(scene);
-    this.cat.pos.copy(A.catWall);
-    this.cat.heading = -Math.PI / 2;
-    this.catHome = A.catWall.clone();
-    this.crow = new Crow(scene);
-    this.crow.pos.copy(A.archTop);
-    this.crow.heading = 0;
-    this.crowHome = A.archTop.clone();
-    this.pigeons = new Pigeons(scene, V(104.5, 0.15, -67.5), 24);
-    this.pigeons.onScatter = () => {
-      if (!this.friends.has('pigeons')) {
-        this.run(function* () { yield 1.2; this.makeFriend('pigeons', 'バサバサッ！ 広場のハトが いっせいに飛んだ'); }.bind(this)());
-      }
-    };
-    this.ducks = new Ducks(scene, A.pondR);
-    this.shiba = new Dog(scene);
-    this.shiba.setParams({ ...breedParams('shiba', 'こむぎ'), fluff: 0.25 });
-    this.shiba.place(60.3, -66.6, Math.PI + 0.3);
-    this.shiba.setPose('sit');
-    this.shibaState = 'sit';
-    this.shibaAdapter = { resolveDog: (d) => { d.pos.y = 0; this.town.col.resolve(d.pos, d.radius, 0.5, 0.3); } };
-    this.traffic = new Traffic(scene, ROAD, town.signals, town.pools);
-    this.traffic.onHonk = () => {
-      if (this.guard.pos.distanceTo(this.player.pos) < 14) this.say(this.guard, 'こらこら、あぶないよー！', 2.2);
-    };
-    this.train = new Train(scene, TRACK);
-    // 静止している人には当たり判定
-    this.solid = [this.grandma, this.florist, this.butcher, this.kid, this.guard];
+  on(type, fn) { this.hooks[type].push(fn); }
+  onPick(id, fn) { this.hooks.pick.set(id, fn); }
+  P(o, x, z, h = 0, y = 0) { const p = new Person(this.scene, o); p.place(x, z, h, y); this.people.push(p); return p; }
+  /** 地面に物を置く。gift: 飼い主へのおみやげになる */
+  addItem(id, label, pos, ry = 0, { gift = true, hidden = false } = {}) {
+    const mesh = makeItem(id);
+    mesh.position.copy(pos);
+    mesh.rotation.y = ry;
+    mesh.visible = !hidden;
+    this.scene.add(mesh);
+    const it = { id, label, mesh, ground: !hidden, home: pos.clone(), gift };
+    this.items.push(it);
+    return it;
   }
-
-  buildItems() {
-    const { scene } = this;
-    this.items = [];
-    const add = (id, label, x, y, z, ry = 0, hidden = false) => {
-      const mesh = makeItem(id);
-      mesh.position.set(x, y, z);
-      mesh.rotation.y = ry;
-      scene.add(mesh);
-      const it = { id, label, mesh, ground: true, home: V(x, y, z), hidden };
-      this.items.push(it);
-      return it;
-    };
-    add('stick', 'りっぱな枝', 11.6, 0.03, 2.4, 0.7);
-    add('cap', 'ぴかぴかの王冠', this.A.capWall.x, this.A.capWall.y + 0.02, this.A.capWall.z, 0);
-    add('ball', 'だれかのボール', this.A.ballBush.x, 0.11, this.A.ballBush.z, 0, true);
-    add('sakura', '桜の枝', 58.9, 0.03, -72.2, 1.2);
-  }
-
-  // ------------------------------------------------------------
-  // 便利
-  // ------------------------------------------------------------
+  near(v, r, dy = 1.2) { const dp = this.player.pos; return Math.hypot(v.x - dp.x, v.z - dp.z) < r && Math.abs(v.y - dp.y) < dy; }
   heightAt(x, z) {
-    let best = 0;
+    let best = this.town.col.baseAt(x, z);
     for (const b of this.town.col.near(x, z, 0.3)) {
-      if (b.y1 < 0.5 && x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1 && b.y1 > best) best = b.y1;
+      if (b.y1 - best < 0.5 && b.y1 > best && x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1) best = b.y1;
     }
     return best;
   }
-  run(gen) { this.co.push({ it: gen, wait: 0, until: null }); }
+  run(gen) { const c = { it: gen, wait: 0, until: null }; this.co.push(c); return c; }
   tickCo(dt) {
     for (let i = this.co.length - 1; i >= 0; i--) {
       const c = this.co[i];
+      if (!c) continue;
       if (c.wait > 0) { c.wait -= dt; continue; }
       if (c.until && !c.until()) continue;
       c.until = null;
       const r = c.it.next(dt);
-      if (r.done) { this.co.splice(i, 1); continue; }
+      if (r.done) { const k = this.co.indexOf(c); if (k >= 0) this.co.splice(k, 1); continue; }
       if (typeof r.value === 'number') c.wait = r.value;
       else if (typeof r.value === 'function') c.until = r.value;
     }
@@ -205,27 +121,114 @@ export class Game {
   sparkle(pos, n = 14, color = 0xffe6a8, shape = 2) {
     this.fx.burst(pos, n, (i, p) => ({ pos: p, vel: V((Math.random() - 0.5) * 2.2, 1 + Math.random() * 2, (Math.random() - 0.5) * 2.2), color, size: 0.14 + Math.random() * 0.12, life: 0.8 + Math.random() * 0.6, gravity: 2.5, drag: 1.5, shape }));
   }
+  confetti(pos, n = 40) {
+    const cols = [0xff8fa8, 0xf6c24a, 0x6fd3ae, 0x8fb8ff, 0xffffff];
+    this.fx.burst(pos, n, (i, p) => ({ pos: p.clone(), vel: V((Math.random() - 0.5) * 4, 2 + Math.random() * 3, (Math.random() - 0.5) * 4), color: cols[i % cols.length], size: 0.12 + Math.random() * 0.1, life: 1.4 + Math.random() * 0.8, gravity: 4, drag: 1.2, shape: i % 2 ? 2 : 3 }));
+  }
   hearts(pos, n = 6) {
     this.fx.burst(pos, n, (i, p) => ({ pos: V(p.x + (Math.random() - 0.5) * 0.4, p.y, p.z + (Math.random() - 0.5) * 0.4), vel: V((Math.random() - 0.5) * 0.6, 0.9 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6), color: 0xff8fa8, size: 0.22 + Math.random() * 0.12, life: 1.6, drag: 1, shape: 1 }));
   }
   puff(pos, n = 8, color = 0xc9b79a) {
     this.dust.burst(pos, n, (i, p) => ({ pos: V(p.x, p.y + 0.05, p.z), vel: V((Math.random() - 0.5) * 1.6, 0.4 + Math.random() * 0.8, (Math.random() - 0.5) * 1.6), color, size: 0.3 + Math.random() * 0.2, grow: 1.5, life: 0.7 + Math.random() * 0.4, drag: 3, shape: 0, alpha: 0.55 }));
   }
-
-  makeFriend(id, line) {
-    if (this.friends.has(id)) return;
-    this.friends.add(id);
-    const f = FRIENDS.find((x) => x.id === id);
-    audio.play('fanfare');
-    const total = new Set([...(this.save.friends || []), ...this.friends]).size;
-    const isNew = !(this.save.friends || []).includes(id);
-    this.ui.friend(f, this.friends.size, FRIENDS.length, line, isNew, total);
+  splash(pos, n = 12) {
+    this.fx.burst(pos, n, (i, p) => ({ pos: V(p.x + (Math.random() - 0.5) * 0.3, p.y, p.z + (Math.random() - 0.5) * 0.3), vel: V((Math.random() - 0.5) * 2, 1.5 + Math.random() * 2, (Math.random() - 0.5) * 2), color: 0xcfe8ff, size: 0.08 + Math.random() * 0.08, life: 0.6 + Math.random() * 0.3, gravity: 9, drag: 0.5, shape: 0, alpha: 0.8 }));
   }
-  detour(id) {
-    if (this.detours.has(id)) return;
-    this.detours.add(id);
-    audio.play('sparkle');
-    this.ui.toast(`寄り道：${DETOURS[id]}`, 'star');
+  /** 写真を撮る（次に描いた画面を小さく保存）。wait 秒あとに */
+  requestPhoto(cb, wait = 0) { this.photoQueue.push({ cb, wait }); }
+  afterRender(dt) {
+    if (!this.photoQueue.length) return;
+    const q = this.photoQueue[0];
+    q.wait -= dt;
+    if (q.wait > 0) return;
+    this.photoQueue.shift();
+    let url = null;
+    try {
+      this.ui.hideBubbles(true);
+      const src = this.renderer.domElement;
+      const cv = this._photoCv || (this._photoCv = document.createElement('canvas'));
+      const W = 480, H = 300;
+      cv.width = W; cv.height = H;
+      const c = cv.getContext('2d');
+      const r = W / H, sr = src.width / src.height;
+      let sw = src.width, sh = src.height, sx = 0, sy = 0;
+      if (sr > r) { sw = sh * r; sx = (src.width - sw) / 2; } else { sh = sw / r; sy = (src.height - sh) / 2; }
+      c.drawImage(src, sx, sy, sw, sh, 0, 0, W, H);
+      url = cv.toDataURL('image/jpeg', 0.85);
+    } catch (e) { url = null; }
+    this.ui.hideBubbles(false);
+    q.cb(url);
+  }
+
+  /** 演出用：カメラを一時的に動かす（fn(c, dt, t) が false を返すまで） */
+  cine(fn) {
+    let t = 0;
+    this.cam.startCine((c, dt) => { t += dt; return fn(c, dt, t); });
+  }
+  endCine(yaw = null, pitch = 0.3) {
+    this.cam.endCine();
+    this.camera.fov = 55;
+    this.camera.updateProjectionMatrix();
+    if (yaw !== null) { this.cam.yaw = yaw; this.cam.pitch = pitch; }
+    this.post.tilt = 0;
+  }
+  /** 短い演出の開始と終わり（操作をとめて黒帯） */
+  lock(on, hud = false) {
+    const p = this.player;
+    p.locked = on;
+    this.ui.letterbox(on);
+    this.ui.hud(!on || hud);
+    this.cineLock = on;
+  }
+
+  // ------------------------------------------------------------
+  // 住人（どのできごとにも関係する人・電車・車）
+  // ------------------------------------------------------------
+  buildCore() {
+    const { scene, town } = this;
+    const A = this.A;
+    const shopper = (o, pts, sp = 1.0) => { const p = this.P(o, pts[0].x, pts[0].z); p.follow(pts); p.speed = sp; return p; };
+    shopper({ top: 0xe8a0a0, bottom: 0x6f7fa8, bag: 0xf2e6cf, hairStyle: 'long', hair: 0x4a3428 }, [V(41.2, 0, 3), V(41.4, 0, -46), V(44.8, 0, -46), V(44.6, 0, 3)], 0.95);
+    shopper({ top: 0x6f8fb0, bottom: 0x3b3f45, hairStyle: 'short', hair: 0x2a2020, glasses: true }, [V(44.5, 0, -44), V(44.2, 0, 2), V(41.6, 0, 2), V(41.8, 0, -44)], 1.1);
+    shopper({ top: 0xf2d29b, bottom: 0x7a5a3a, hairStyle: 'bun', hair: 0xd8d2cc, skirt: true, bag: 0x9c6b45, scale: 0.9 }, [V(42, 0, -20), V(42.2, 0, -36), V(44, 0, -36), V(44, 0, -20)], 0.6);
+    shopper({ kid: true, top: 0x9fd4b0, bottom: 0x3e6ea8, hat: 'yellow' }, [V(43.6, 0, 4), V(43.4, 0, -12), V(42.4, 0, -12), V(42.6, 0, 4)], 1.3);
+    shopper({ top: 0xb58ae0, bottom: 0x4a5468, hairStyle: 'short', hair: 0x6a4330, bag: 0x3e6ea8 }, [V(-20, 0, 7.4), V(36, 0, 7.4), V(36, 0, 9.6), V(-20, 0, 9.6)], 1.0);
+    // 公園の人
+    const sitOn = (p, b) => p.sitOn(b.x, b.z, b.ry, b.y);
+    this.oldman = this.P({ name: 'おじいさん', hairStyle: 'bald', hair: 0xd8d2cc, top: 0x7a8a6a, bottom: 0x5b5b5b, glasses: true, hat: 'straw' }, 0, 0);
+    sitOn(this.oldman, A.benches.park[1]);
+    const jog = this.P({ top: 0xe8604c, bottom: 0x3b3f45, hairStyle: 'short', hat: 'cap', hatColor: 0x3b3f45 }, 52, -70.5);
+    const loop = [];
+    for (let i = 0; i < 16; i++) { const a = -(i / 16) * Math.PI * 2; loop.push(V(52 + Math.cos(a) * 12.5, 0, -80 + Math.sin(a) * 9.5)); }
+    jog.follow(loop);
+    jog.speed = 2.6;
+    // 河川敷：犬の散歩・ジョギング・自転車
+    const rj = this.P({ top: 0x3e8fd8, bottom: 0x2a2f38, hairStyle: 'short', hat: 'cap', hatColor: 0xf2f0ea }, 0, RIVER.flatY);
+    rj.follow([V(-50, RIVER.flatY, -121.5), V(195, RIVER.flatY, -121.5), V(195, RIVER.flatY, -121.2), V(-50, RIVER.flatY, -121.2)]);
+    rj.speed = 2.4;
+    rj.pos.y = RIVER.flatY;
+    const walker = this.P({ top: 0xd9a676, bottom: 0x4a5468, hairStyle: 'bun', hair: 0x9a8a80, scale: 0.95 }, 10, -112);
+    walker.follow([V(-40, 0, -112.5), V(70, 0, -112.5), V(70, 0, -111.5), V(-40, 0, -111.5)]);
+    walker.speed = 0.9;
+    // 駅前
+    this.P({ top: 0x3b4a5e, bottom: 0x3b3f45, hairStyle: 'short', bag: 0x5b4033 }, 110.2, -58.2, Math.PI, 0.15);
+    const wait = this.P({ top: 0x9fcfe8, bottom: 0x4a5468, hairStyle: 'short', hair: 0x3b2a22, glasses: true }, 0, 0);
+    sitOn(wait, A.benches.plaza[0]);
+    // 飼い主（最後に改札から）
+    this.owner = this.P({ name: '', coat: true, top: 0xd9a676, inner: 0xf6efe2, bottom: 0x3f4a5e, bag: 0xf2c14e, hairStyle: 'long', hair: 0x3b2a22, scarf: 0xc9574a, shoes: 0x6b4a3e }, A.gateInside.x + 3, A.gateInside.z, -Math.PI / 2, 0.15);
+    this.owner.root.visible = false;
+    this.owner.hidden = true;
+    this.commuters = [];
+    for (let i = 0; i < 4; i++) {
+      const c = this.P({ top: [0x3b4a5e, 0xd9d4ca, 0x8a2f35, 0x5b6858][i], bottom: [0x3b3f45, 0x4a5468, 0x3b3f45, 0x2a2f38][i], hairStyle: ['short', 'long', 'bun', 'short'][i], hair: 0x2a2020, bag: [0x5b4033, null, 0xf2e6cf, 0x3b3f45][i] }, A.gateInside.x + 3, -72, -Math.PI / 2, 0.15);
+      c.root.visible = false;
+      c.hidden = true;
+      this.commuters.push(c);
+    }
+    this.traffic = new Traffic(scene, ROAD, town.signals, town.pools);
+    this.train = new Train(scene, TRACK);
+    // 庭の枝（だれでも拾えるおみやげ）
+    this.addItem('stick', 'りっぱな枝', V(11.6, 0.03, 2.4), 0.7);
   }
 
   // ------------------------------------------------------------
@@ -243,20 +246,17 @@ export class Game {
     this.hour = START_HOUR;
     this.state = 'prologue';
     this.flags = {};
-    this.friends.clear();
-    this.detours.clear();
+    this.ev.reset();
     this.town.win.set(0.14);
     this.cam.snap(p);
     this.ui.setName(this.dogName);
+    this.ui.events(0, this.ev.total);
     this.run(this.prologue());
   }
 
   applyWear() {
-    const rig = this.player.dog.rig;
     const unlocked = this.save.wear || [];
-    if (unlocked.includes('bandana')) this.wear('bandana', true);
-    if (unlocked.includes('crown')) this.wear('crown', true);
-    void rig;
+    for (const k of ['bandana', 'crown', 'bell']) if (unlocked.includes(k)) this.wear(k, true);
   }
   wear(kind, silent = false) {
     const rig = this.player.dog.rig;
@@ -265,8 +265,8 @@ export class Game {
     const w = makeWear(kind);
     w.name = 'wear-' + kind;
     const d = rig.dims;
-    if (kind === 'bandana') {
-      w.position.set(0, d.bodyR * 0.55, d.bodyLen * 0.3);
+    if (kind === 'bandana' || kind === 'bell') {
+      w.position.set(0, d.bodyR * (kind === 'bell' ? 0.3 : 0.55), d.bodyLen * 0.3 + (kind === 'bell' ? d.bodyR * 0.55 : 0));
       w.scale.setScalar(0.9 + d.bodyR * 1.2);
       rig.body.add(w);
     } else {
@@ -276,6 +276,10 @@ export class Game {
     }
     if (!silent) this.sparkle(this.player.pos.clone().add(V(0, 0.6, 0)), 20, 0xfff0c0, 2);
   }
+  unlockWear(k) {
+    const w = this.save.wear || (this.save.wear = []);
+    if (!w.includes(k)) w.push(k);
+  }
 
   *prologue() {
     const p = this.player, cam = this.cam, ui = this.ui;
@@ -284,9 +288,9 @@ export class Game {
     ui.hud(false);
     // 寝ている顔のアップ
     const d = p.dog;
-    let t = 0;
-    cam.startCine((c, dt) => {
-      t += dt;
+    this.post.tilt = 0.5;
+    this.post.tiltFocus = 0.52;
+    this.cine((c, dt, t) => {
       const k = smooth(clamp(t / 7, 0, 1));
       c.position.set(BED.x - 0.9 + k * 0.3, 0.55 + k * 0.25, BED.z + 1.35 - k * 0.2);
       c.lookAt(d.headWorld.x, d.headWorld.y - 0.05, d.headWorld.z);
@@ -313,9 +317,7 @@ export class Game {
     ui.caption('ふわっ…と、風。', 1.8);
     this.curtainPuff = 1.5;
     yield 2.0;
-    cam.endCine();
-    this.camera.fov = 55;
-    this.camera.updateProjectionMatrix();
+    this.endCine();
     p.locked = false;
     ui.letterbox(false);
     ui.hud(true);
@@ -336,19 +338,19 @@ export class Game {
     this.train.z = -255;
     this.train.v = 21;
     const fog0 = day.fogScale;
-    let t = 0;
     const from = this.camera.position.clone();
     const station = V(128, 7, -66);
     const dogP = p.pos.clone();
-    cam.startCine((c, dt) => {
-      t += dt;
+    this.post.tilt = 0.8;
+    this.post.tiltFocus = 0.45;
+    this.cine((c, dt, t) => {
       day.fogScale = lerp(fog0, 1.9, smooth(clamp(t / 2.5, 0, 1)));
       const k = smooth(clamp(t / 6.5, 0, 1));
       // 犬の背中 → 空へ持ち上がって町を見わたす
       const a = V(dogP.x - 1.8, dogP.y + 0.7, dogP.z + 0.3);
-      const b = V(dogP.x - 7, 16, dogP.z + 13);
+      const b = V(dogP.x - 7, 18, dogP.z + 15);
       c.position.lerpVectors(t < 0.01 ? from : a, b, k);
-      const look = _v.lerpVectors(V(dogP.x + 3, 0.6, dogP.z), V(station.x, 13, station.z), smooth(clamp((t - 0.6) / 5, 0, 1)));
+      const look = _v.lerpVectors(V(dogP.x + 3, 0.6, dogP.z), V(station.x, 13, station.z - 10), smooth(clamp((t - 0.6) / 5, 0, 1)));
       c.lookAt(look);
       const fov = lerp(50, 38, k);
       if (Math.abs(c.fov - fov) > 0.01) { c.fov = fov; c.updateProjectionMatrix(); }
@@ -359,28 +361,24 @@ export class Game {
     // カメラが空へ上がっている間に、犬は庭へ降りておく
     p.place(6.9, 0, 0.4, 0.54);
     yield 1.2;
-    ui.title('駅まで、おむかえに。', `18:00 の電車で、あの人が帰ってくる。`, 5.2);
+    ui.title('駅まで、おむかえに。', '18:00 の電車で、あの人が帰ってくる。', 5.2);
     audio.play('chime');
     yield 5.8;
     // 犬のうしろへ戻る
     const back = this.camera.position.clone();
-    t = 0;
-    cam.startCine((c, dt) => {
-      t += dt;
+    this.cine((c, dt, t) => {
       const k = smooth(clamp(t / 1.6, 0, 1));
       day.fogScale = lerp(1.9, fog0, k);
+      this.post.tilt = 0.8 * (1 - k);
       const behind = V(p.pos.x - 1.6, p.pos.y + 1.3, p.pos.z - 2.8);
       c.position.lerpVectors(back, behind, k);
       c.lookAt(_v.lerpVectors(station, V(p.pos.x + 1.5, 0.5, p.pos.z + 2.6), k));
-      const fov = lerp(38, 55, k);
-      c.fov = fov; c.updateProjectionMatrix();
+      c.fov = lerp(38, 55, k); c.updateProjectionMatrix();
       return t < 1.6;
     });
     yield 1.6;
     day.fogScale = fog0;
-    cam.yaw = 0.54 + Math.PI;
-    cam.pitch = 0.3;
-    cam.endCine();
+    this.endCine(0.54 + Math.PI, 0.3);
     cam.blend = 1;
     p.locked = false;
     ui.letterbox(false);
@@ -388,6 +386,8 @@ export class Game {
     ui.objective('庭から出る方法を さがそう');
     this.hintT = 0;
     this.flags.needSniffHint = true;
+    // 光る印の説明
+    this.run(function* () { yield 4; this.ui.toast('光る印は「できごと」。町じゅうに かくれている', 'star'); }.bind(this)());
   }
 
   *crawl() {
@@ -426,7 +426,7 @@ export class Game {
     d.shaking = false;
     p.locked = false;
     ui.objective('においをたどって 駅へ');
-    ui.toast('くんくんすると、あの人のにおいが光って見える', 'nose');
+    ui.toast('くんくん（F／くんくん長押し）で、あの人のにおいと「できごと」の光が見える', 'nose');
   }
 
   // ------------------------------------------------------------
@@ -434,14 +434,13 @@ export class Game {
   // ------------------------------------------------------------
   update(dt) {
     this.t += dt;
-    const p = this.player, d = p.dog, ctl = this.ctl, ui = this.ui;
+    const p = this.player, d = p.dog, ctl = this.ctl, ui = this.ui, F = this.flags;
     this.tickCo(dt);
-    // 時間
-    if (this.state === 'play') {
-      const cap = this.flags.arrival ? 18.35 : 17.9;
-      this.hour = Math.min(cap, this.hour + dt * HOUR_PER_SEC * (this.flags.escaped ? 1 : 0.35));
-    } else if (this.state === 'arrival' || this.state === 'reunion') {
-      this.hour = Math.min(18.3, this.hour + dt / 240);
+    // 時間：遊んでいる間だけ進む（演出の間は止まる）。まどを出るまではゆっくり
+    if (this.state === 'play' && !p.locked && !this.timelapse) {
+      this.hour += dt * HOUR_PER_SEC * (F.escaped ? 1 : 0.5);
+    } else if (this.state === 'reunion' || this.state === 'result') {
+      this.hour = Math.min(18.6, this.hour + dt / 300);
     }
     if (this.timelapse) this.hour = Math.min(this.timelapse.to, this.hour + dt * this.timelapse.rate);
 
@@ -461,7 +460,7 @@ export class Game {
     this.sniffK = damp(this.sniffK, sniffing ? 1 : 0, sniffing ? 5 : 3, dt);
     if (sniffing) {
       d.sniff = 0.2;
-      if (this.flags.needSniffHint) this.flags.needSniffHint = false;
+      if (F.needSniffHint) F.needSniffHint = false;
     }
     p.run = ctl.run && !sniffing;
     const mv = playing ? this.cam.toWorld(ctl.move.x, ctl.move.y, _v) : _v.set(0, 0, 0);
@@ -483,64 +482,71 @@ export class Game {
     const dp = p.pos;
     for (const q of this.people) {
       if (q.hidden) continue;
-      const far = q.pos.distanceTo(this.camera.position) > 48;
+      const far = q.pos.distanceTo(this.camera.position) > 55;
       q.root.visible = !far;
       if (!far || q.path || q.target) q.update(dt, dp);
     }
-    this.updateCat(dt);
-    this.updateCrow(dt);
-    this.pigeons.update(dt, dp, d.speed);
-    this.ducks.update(dt, this.t);
-    this.updateShiba(dt);
     const onRoad = dp.x > Z.road.x0 - 0.2 && dp.x < Z.road.x1 + 0.2 && dp.z < -44 && dp.z > -100;
     this.traffic.update(dt, dp, onRoad);
     this.updateCars(dt, onRoad);
-    this.updateCrossing(dt);
-    // 鳥のさえずり（公園と家のまわり）
-    if (this.state === 'play' && (this.area === 'park' || !this.flags.dug) && Math.random() < dt * 0.25) audio.play('chirp', 0.7);
+    this.updateCrossingSound();
+    // 鳥のさえずり（公園・神社・家のまわり）
+    if (this.state === 'play' && (this.area === 'park' || this.area === 'shrine' || !F.dug) && Math.random() < dt * 0.25) audio.play('chirp', 0.7);
     this.updateTrain(dt);
+    for (const h of this.hooks.update) h(dt, playing);
     this.updateItems(dt);
     this.updateHints(dt);
+    this.ev.update(dt, dp, this.camera, this.sniffK, this.state === 'play' && F.escaped && !this.cineLock);
     this.fx.update(dt);
     this.dust.update(dt);
+    this.motes.update(dt, this.camera, this.day, this.area === 'home' && !F.escaped);
     this.trail.update(dt, this.sniffK, dp);
     this.post.grade.uniforms.uSniff.value = this.sniffK * 0.9;
 
     // 場所の名前
-    if (this.state === 'play' && this.flags.dug) {
+    if (this.state === 'play' && F.dug) {
       const a = AREAS.find((z) => z.test(dp));
-      if (a && a.id !== this.area) {
-        this.area = a.id;
-        if (!this.flags['area-' + a.id]) {
-          this.flags['area-' + a.id] = true;
+      const id = a ? a.id : null;
+      if (id !== this.area) {
+        this.area = id;
+        if (a && !F['area-' + a.id]) {
+          F['area-' + a.id] = true;
           ui.area(a.name, a.sub);
           this.onArea(a.id);
         }
       }
     }
     // 窓
-    if (!this.flags.escaped && this.flags.windowOpen && dp.x > ROOM.maxX + 0.35) { this.flags.escaped = true; this.run(this.escapeReveal()); }
+    if (!F.escaped && F.windowOpen && dp.x > ROOM.maxX + 0.35) { F.escaped = true; this.run(this.escapeReveal()); }
     if (this.curtainPuff > 0) this.curtainPuff -= dt;
-    // 寄り道
-    if (this.state === 'play') this.checkDetours(dt);
     // 着地のほこり
     if (!this._landHook) {
       this._landHook = true;
       p.onLand = (imp) => { if (imp > 3) this.puff(p.pos, 5, 0xd9cbb5); };
     }
-    // 駅
-    if (this.state === 'play' && !this.flags.arrival) this.checkStation(dt);
+    // 駅と電車
+    if (this.state === 'play') this.checkStation(dt);
+    // 環境音：川の音・商店街のざわめき・高台の風・大通りの車
+    if (this.state !== 'idle') {
+      const nearRiver = dp.z < -100 ? clamp(1 - (Math.abs(dp.z + 140) - 6) / 38, 0, 1) : 0;
+      const inStreet = clamp(1 - (Math.abs(dp.x - 43) - 4) / 10, 0, 1) * (dp.z < 8 && dp.z > -52 ? 1 : 0);
+      audio.setAmbience({
+        river: nearRiver,
+        street: inStreet,
+        wind: dp.y > 5 ? 1 : this.area === 'river' ? 0.5 : 0.25,
+        traffic: clamp(1 - (Math.abs(dp.x - 87) - 6) / 36, 0, 1) * (dp.z < -30 && dp.z > -160 ? 1 : 0.3),
+      });
+    }
     // HUD
-    ui.clock(this.hour, START_HOUR, ARRIVE_HOUR);
+    ui.clock(this.hour, START_HOUR, ARRIVE_HOUR, !!this.timelapse);
     ui.carry(p.carry ? p.carry.label : null);
     ui.sniff(this.sniffK);
     // ヒント
     this.hintT += dt;
-    if (this.flags.needSniffHint && this.hintT > 12 && !this.flags.sniffHinted) {
-      this.flags.sniffHinted = true;
+    if (F.needSniffHint && this.hintT > 12 && !F.sniffHinted) {
+      F.sniffHinted = true;
       ui.toast(this.ctl.touch ? '「くんくん」を長押しすると、においが見える' : 'F を長押しで「くんくん」。においが見える', 'nose');
     }
-    this.lastSpeed = d.speed;
   }
 
   pushOut(p) {
@@ -555,16 +561,17 @@ export class Game {
         dp.z = q.pos.z + (dz / dd) * r;
       }
     }
-    const s = this.shiba.pos;
-    const dx = dp.x - s.x, dz = dp.z - s.z, dd = Math.hypot(dx, dz);
-    if (dd < 0.45 && dd > 1e-4) { dp.x = s.x + (dx / dd) * 0.45; dp.z = s.z + (dz / dd) * 0.45; }
+    for (const s of this.solidDogs || []) {
+      const dx = dp.x - s.pos.x, dz = dp.z - s.pos.z, dd = Math.hypot(dx, dz);
+      if (dd < 0.45 && dd > 1e-4 && Math.abs(dp.y - s.pos.y) < 0.8) { dp.x = s.pos.x + (dx / dd) * 0.45; dp.z = s.pos.z + (dz / dd) * 0.45; }
+    }
   }
 
   // ------------------------------------------------------------
   // 行動
   // ------------------------------------------------------------
   interactables() {
-    const p = this.player, dp = p.pos, A = this.A;
+    const p = this.player, dp = p.pos;
     const list = [];
     const near = (v, r, dy = 0.6) => Math.hypot(v.x - dp.x, v.z - dp.z) < r && Math.abs(v.y - dp.y) < dy;
     // 窓
@@ -575,28 +582,22 @@ export class Game {
     if (!this.flags.dug && near(V(DIG.x, 0, DIG.z - 0.45), 0.95)) {
       list.push({ id: 'dig', label: 'ほる', hold: true });
     }
+    // できごと（先に登録したものが優先）
+    for (const f of this.hooks.interact) {
+      const a = f(dp);
+      if (a) list.push(a);
+    }
     // 物
-    if (!p.carry || true) {
-      for (const it of this.items) {
-        if (!it.ground) continue;
-        if (it.hidden && this.sniffK < 0.3 && !it.found) continue;
-        const v = it.mesh.position;
-        if (near(v, 1.0, 0.5)) {
-          list.push({ id: 'pick', label: p.carry ? 'とりかえる' : 'くわえる', act: () => this.pick(it) });
-          break;
-        }
-      }
+    let best = null, bd = 1.15;
+    for (const it of this.items) {
+      if (!it.ground || !it.mesh.visible) continue;
+      const v = it.mesh.position;
+      const dd = Math.hypot(v.x - dp.x, v.z - dp.z);
+      if (dd < bd && Math.abs(v.y - dp.y) < 0.6) { bd = dd; best = it; }
     }
-    // わたす
-    if (p.carry) {
-      if (p.carry.id === 'ball' && this.kid.pos.distanceTo(dp) < 1.8) list.push({ id: 'give-kid', label: 'わたす', act: () => this.run(this.giveKid()) });
-      else if (p.carry.id === 'cap' && Math.hypot(dp.x - 43, dp.z - 5.1) < 5 && !this.flags.crowDone) list.push({ id: 'show-crow', label: 'みせる', act: () => this.run(this.crowTrade()) });
-      else if (!this.flags.arrival) list.push({ id: 'drop', label: 'はなす', act: () => this.dropItem() });
-    }
-    // すべり台
-    if (A.slide && Math.hypot(dp.x - A.slide.top.x, dp.z - (A.slide.top.z + 0.2)) < 0.8 && dp.y > 1.3) {
-      list.push({ id: 'slide', label: 'すべる', act: () => this.run(this.slide()) });
-    }
+    if (best) list.push({ id: 'pick', label: p.carry ? 'とりかえる' : 'くわえる', act: () => this.pick(best) });
+    // はなす
+    if (p.carry && !this.flags.arrival) list.push({ id: 'drop', label: 'はなす', act: () => this.dropItem() });
     return list;
   }
 
@@ -648,14 +649,20 @@ export class Game {
     it.ground = false;
     it.found = true;
     p.hold({ id: it.id, label: it.label, mesh: it.mesh, item: it });
-    if (it.id === 'cap' && !this.flags.capHint) {
-      this.flags.capHint = true;
-      this.ui.toast('ぴかぴかの王冠。…カラスが好きそう？', 'star');
-    }
-    if (it.id === 'ball' && !this.flags.ballHint) {
-      this.flags.ballHint = true;
-      this.ui.toast('だれかのボールを見つけた', 'star');
-    }
+    const h = this.hooks.pick.get(it.id);
+    if (h && !it.picked) h(it);
+    it.picked = true;
+  }
+  /** 口に物をわたす（もらった物） */
+  give(id, label) {
+    const it = this.addItem(id, label, this.player.pos.clone(), 0, { hidden: true });
+    it.mesh.visible = true;
+    const p = this.player;
+    if (p.carry) this.dropItem();
+    it.ground = false;
+    it.picked = true;
+    p.hold({ id, label, mesh: it.mesh, item: it });
+    return it;
   }
   dropItem() {
     const p = this.player;
@@ -664,7 +671,7 @@ export class Game {
     const it = c.item;
     if (!it) return;
     const f = p.dog.fwd;
-    it.mesh.position.set(p.pos.x + f.x * 0.45, p.pos.y + 0.03, p.pos.z + f.z * 0.45);
+    it.mesh.position.set(p.pos.x + f.x * 0.45, p.pos.y + (it.id === 'ball' ? 0.075 : 0.03), p.pos.z + f.z * 0.45);
     it.mesh.rotation.set(0, p.heading, 0);
     this.scene.add(it.mesh);
     it.ground = true;
@@ -674,16 +681,9 @@ export class Game {
   bark() {
     const p = this.player, dp = p.pos;
     p.dog.bark(1 + (Math.random() - 0.5) * 0.1);
-    // ハト
-    if (Math.hypot(dp.x - 104.5, dp.z + 67.5) < 6) for (const b of this.pigeons.birds) if (b.st === 'ground') { b.st = 'fly'; b.air = 0; b.v.set((Math.random() - 0.5) * 3, 5, (Math.random() - 0.5) * 3); }
-    if (Math.hypot(dp.x - 104.5, dp.z + 67.5) < 6) { audio.play('flap'); this.pigeons.onScatter(); }
-    // ねこ
-    const cd = this.cat.pos.distanceTo(dp);
-    if (cd < 5 && !this.friends.has('cat') && this.cat.state !== 'run') this.catFlee();
-    // カラス
-    if (p.carry && p.carry.id === 'cap' && Math.hypot(dp.x - 43, dp.z - 5.1) < 5 && !this.flags.crowDone) this.run(this.crowTrade());
-    // 柴犬
-    if (this.shiba.pos.distanceTo(dp) < 4.5 && this.shibaState === 'sit' && !this.friends.has('shiba')) this.run(this.shibaTag());
+    let used = false;
+    for (const f of this.hooks.bark) if (f(dp)) used = true;
+    if (used) return;
     // 人
     for (const q of this.people) {
       if (q.hidden || q.pos.distanceTo(dp) > 3) continue;
@@ -699,237 +699,7 @@ export class Game {
     d.setPose('sit');
     d.setExpr('happy');
     this.sitT = 0;
-    // 魚屋
-    if (this.grandma.pos.distanceTo(dp) < 2.6 && !this.friends.has('grandma')) this.run(this.grandmaGift());
-    else if (this.florist.pos.distanceTo(dp) < 2.6 && !this.friends.has('florist')) this.run(this.floristGift());
-    else if (this.guard.pos.distanceTo(dp) < 4.6 && !this.friends.has('guard') && !this.traffic.pedGreen) this.run(this.guardFriend());
-    else if (Math.hypot(dp.x - this.A.shrine.x, dp.z - this.A.shrine.z) < 1.6) {
-      this.detour('shrine');
-      this.sayAt(V(this.A.shrine.x - 1, 1.4, this.A.shrine.z), '…ちりん。', 1.6);
-    }
-  }
-
-  // ------------------------------------------------------------
-  // 住人とのできごと
-  // ------------------------------------------------------------
-  *grandmaGift() {
-    const g = this.grandma, p = this.player;
-    g.lookAt = p.pos;
-    this.say(g, 'あらまあ、おすわり上手ねえ', 2.2);
-    yield 1.6;
-    g.pose = 'give';
-    this.say(g, 'はい、にぼし。ないしょよ', 2.4);
-    yield 1.0;
-    audio.play('chew');
-    p.dog.chewing = true;
-    this.hearts(p.pos.clone().add(V(0, 0.6, 0)), 5);
-    yield 1.2;
-    p.dog.chewing = false;
-    g.pose = 'stand';
-    g.lookAt = null;
-    p.boost = 45;
-    this.ui.toast('にぼしで 元気100倍！ しばらく足が速くなる', 'bolt');
-    this.makeFriend('grandma', 'にぼしをもらった');
-  }
-  *floristGift() {
-    const g = this.florist, p = this.player;
-    g.lookAt = p.pos;
-    this.say(g, 'いい子ね。だれかのお迎え？', 2.2);
-    yield 2.0;
-    g.pose = 'give';
-    this.say(g, 'じゃあこれ、持っていって。きっと喜ぶよ', 2.8);
-    yield 1.2;
-    const mesh = makeItem('sunflower');
-    const it = { id: 'sunflower', label: 'ひまわり', mesh, ground: false, home: p.pos.clone() };
-    this.items.push(it);
-    if (p.carry) this.dropItem();
-    p.hold({ id: 'sunflower', label: 'ひまわり', mesh, item: it });
-    this.sparkle(p.pos.clone().add(V(0, 0.5, 0)), 16, 0xfff0a0);
-    yield 0.8;
-    g.pose = 'stand';
-    g.lookAt = null;
-    this.makeFriend('florist', 'ひまわりをもらった');
-  }
-  *guardFriend() {
-    const g = this.guard;
-    g.lookAt = this.player.pos;
-    this.say(g, 'おっ、ちゃんと待ってて えらいねえ', 2.4);
-    yield 2.2;
-    this.say(g, '青になったら わたるんだよ', 2.2);
-    this.makeFriend('guard', '赤信号で ちゃんと待った');
-    yield 2;
-    g.lookAt = null;
-  }
-  *giveKid() {
-    const k = this.kid, p = this.player;
-    const c = p.drop();
-    if (c && c.item) { c.item.mesh.visible = false; c.item.ground = false; }
-    k.pose = 'cheer';
-    audio.play('ok');
-    this.say(k, 'ぼくのボール！ ありがとう！', 2.2);
-    yield 1.6;
-    k.pose = 'give';
-    this.say(k, 'おれいに これあげる！', 2.2);
-    yield 1.0;
-    this.wear('crown');
-    this.unlockWear('crown');
-    this.ui.toast('花かんむりを もらった！', 'flower');
-    this.makeFriend('kid', 'ボールを届けた');
-    yield 1.2;
-    k.pose = 'stand';
-  }
-  *crowTrade() {
-    if (this.flags.crowDone || this.flags.crowBusy) return;
-    this.flags.crowBusy = true;
-    const cr = this.crow, p = this.player;
-    audio.play('caw');
-    this.sayAt(cr.pos, 'カァ？', 1.2);
-    yield 0.6;
-    const f = p.dog.fwd;
-    const land = V(p.pos.x + f.x * 0.7, p.pos.y, p.pos.z + f.z * 0.7);
-    cr.flyTo(land, 1.3, 1.2);
-    yield () => !cr.flight;
-    const c = p.drop();
-    if (c && c.item) {
-      c.item.ground = false;
-      cr.root.add(c.item.mesh);
-      c.item.mesh.position.set(0, 0.3, 0.33);
-    }
-    audio.play('caw');
-    yield 0.5;
-    cr.flyTo(this.crowHome, 1.6, 2.2);
-    yield () => !cr.flight;
-    yield 0.4;
-    // お礼を落とす
-    this.sayAt(cr.pos, 'カァ！', 1.2);
-    const b = makeItem('bandana');
-    b.position.copy(cr.pos);
-    this.scene.add(b);
-    let t = 0;
-    const from = cr.pos.clone();
-    const to = p.pos.clone().add(V(0, 0.4, 0));
-    while (t < 1) {
-      const dt = yield;
-      t += (dt || 0.016) / 0.9;
-      b.position.lerpVectors(from, to, t);
-      b.position.y += Math.sin(t * Math.PI) * 1.2;
-      b.rotation.y += 0.3;
-    }
-    this.scene.remove(b);
-    this.wear('bandana');
-    this.unlockWear('bandana');
-    this.ui.toast('赤いバンダナを もらった！', 'star');
-    this.flags.crowDone = true;
-    this.makeFriend('crow', 'ぴかぴかと バンダナを交換した');
-  }
-  unlockWear(k) {
-    const w = this.save.wear || (this.save.wear = []);
-    if (!w.includes(k)) w.push(k);
-  }
-
-  catFlee() {
-    const c = this.cat;
-    // 逃げたばかりの間は、もう一度は逃げない（着いた瞬間に鳴きなおして音が重なっていた）
-    if (this.t < (this.catCalmT || 0)) return;
-    this.catCalmT = this.t + 8;
-    c.state = 'run';
-    c.sleep = 0;
-    audio.play('meow', 1.3);
-    this.sayAt(c.pos, 'フーッ！', 1.2);
-    // 塀の上で、犬から遠いほうの端へ
-    const dx = this.player.pos.x;
-    const tx = Math.abs(dx - 14.2) > Math.abs(dx - 31.4) ? 14.2 : 31.4;
-    c.target = V(tx, c.pos.y, 5.6);
-    const id = (this.catRunId || 0) + 1;
-    this.catRunId = id;
-    c.onArrive = () => {
-      c.state = 'loaf';
-      this.run(function* () {
-        yield 14;
-        if (id !== this.catRunId) return;
-        c.state = 'walk';
-        c.target = this.catHome.clone();
-        c.onArrive = () => { c.state = 'loaf'; c.sleep = 1; };
-      }.bind(this)());
-    };
-  }
-  updateCat(dt) {
-    const c = this.cat, p = this.player, dp = p.pos;
-    c.update(dt);
-    if (this.friends.has('cat') || c.state === 'run') return;
-    const dd = Math.hypot(dp.x - c.pos.x, dp.z - c.pos.z);
-    c.lookAt = dd < 6 ? dp : null;
-    if (dd < 5) c.sleep = damp(c.sleep, 0, 2, dt);
-    else c.sleep = damp(c.sleep, 1, 0.5, dt);
-    if (dd < 3.2 && p.run && p.dog.speed > 2.5) { this.catFlee(); return; }
-    if (dd < 1.5 && dp.y > 1.1) {
-      c.state = 'sit';
-      audio.play('meow');
-      this.sayAt(c.pos, 'にゃ〜', 1.6);
-      this.hearts(c.pos.clone().add(V(0, 0.4, 0)), 4);
-      this.makeFriend('cat', '塀の上で あいさつした');
-    } else if (dd < 2.4 && dp.y < 0.5 && !this.flags.catHint) {
-      this.flags.catHint = true;
-      this.sayAt(c.pos, '（…塀の上まで来れる？）', 2.4);
-    }
-  }
-  updateCrow(dt) {
-    const cr = this.crow;
-    cr.update(dt);
-    if (!cr.flight && Math.random() < dt * 0.08 && cr.pos.distanceTo(this.player.pos) < 25) audio.play('caw');
-    if (!this.flags.crowHint && cr.pos.distanceTo(this.player.pos) < 6 && !cr.flight) {
-      this.flags.crowHint = true;
-      this.sayAt(cr.pos, 'カァ（ぴかぴか、ほしい…）', 2.6);
-    }
-  }
-
-  *shibaTag() {
-    const s = this.shiba;
-    this.shibaState = 'bow';
-    s.setPose('bow');
-    s.bark(1.25);
-    this.sayAt(s.pos, 'わんっ！（おいかけっこ！）', 1.6);
-    yield 0.9;
-    this.shibaState = 'run';
-    s.setPose('stand');
-    this.tagT = 0;
-    this.ui.objective('こむぎを つかまえろ！');
-  }
-  updateShiba(dt) {
-    const s = this.shiba, p = this.player, dp = p.pos;
-    const mv = _w.set(0, 0, 0);
-    if (this.shibaState === 'run') {
-      this.tagT += dt;
-      const dx = s.pos.x - dp.x, dz = s.pos.z - dp.z, dd = Math.hypot(dx, dz);
-      // 逃げる。公園のまんなかへ戻ろうとする
-      const cx = 55 - s.pos.x, cz = -64 - s.pos.z;
-      mv.set(dx / (dd + 0.01) + cx * 0.04 + Math.sin(this.t * 1.7) * 0.5, 0, dz / (dd + 0.01) + cz * 0.04 + Math.cos(this.t * 1.3) * 0.5);
-      if (mv.length() > 1) mv.normalize();
-      s.speedMul = dd < 3 ? 1.6 : 1.1;
-      if (dd < 0.75) {
-        this.shibaState = 'caught';
-        s.setPose('belly');
-        s.setExpr('happy');
-        s.bark(1.3);
-        this.hearts(s.pos.clone().add(V(0, 0.5, 0)), 6);
-        this.ui.objective('においをたどって 駅へ');
-        this.makeFriend('shiba', 'おいかけっこで つかまえた');
-        this.run(function* () { yield 2.5; this.shibaState = 'home'; s.setPose('stand'); }.bind(this)());
-      } else if (this.tagT > 25) {
-        this.shibaState = 'home';
-        this.ui.objective('においをたどって 駅へ');
-        this.sayAt(s.pos, 'わふ（またね）', 1.6);
-      }
-    } else if (this.shibaState === 'home') {
-      const hx = 60.3 - s.pos.x, hz = -66.6 - s.pos.z, hd = Math.hypot(hx, hz);
-      if (hd > 0.3) mv.set(hx / hd, 0, hz / hd).multiplyScalar(Math.min(1, hd));
-      else { this.shibaState = 'sit'; s.setPose('sit'); s.heading = Math.PI + 0.3; }
-      s.speedMul = 1;
-    } else {
-      // すわって しっぽを振る。近いと見る
-      if (s.pos.distanceTo(dp) < 5) { s.lookAt = dp.clone().setY(0.4); s.lookHold = 0.3; s.excite = 0.9; }
-    }
-    s.update(dt, mv, this.shibaAdapter);
+    for (const f of this.hooks.sit) if (f(dp)) break;
   }
 
   updateCars(dt, onRoad) {
@@ -946,54 +716,44 @@ export class Game {
       }
     }
   }
-
-  updateCrossing() {
+  updateCrossingSound() {
     const tr = this.traffic, dp = this.player.pos;
     const nearCross = Math.hypot(dp.x - 87, dp.z + 72) < 26;
     if (tr.pedBeep) { tr.pedBeep = false; if (nearCross && this.state === 'play') audio.play('crossing'); }
-    const g = this.guard;
-    const gd = g.pos.distanceTo(dp);
-    g.pose = tr.pedGreen && gd < 14 ? 'flag' : 'stand';
-    if (tr.pedGreen && gd < 8 && !this.flags.guardSaid && this.state === 'play') {
-      this.flags.guardSaid = true;
-      this.say(g, 'はい、青だよ。わたっていいよー', 2.2);
-    }
-    if (!tr.pedGreen) this.flags.guardSaid = false;
-    // 赤で横断歩道に入ったら注意
-    const onCross = dp.x > 81 && dp.x < 93 && dp.z > -74.5 && dp.z < -69.5;
-    if (onCross && !tr.pedGreen && !this.flags.whistled && this.state === 'play') {
-      this.flags.whistled = true;
-      audio.play('whistle');
-      this.say(g, 'ピピーッ！ 赤だよー！', 1.8);
-      this.run(function* () { yield 6; this.flags.whistled = false; }.bind(this)());
-    }
   }
 
   updateTrain(dt) {
     const tr = this.train;
     tr.update(dt, this.player.pos);
-    if (this.flags.arrival) return;
+    if (this.flags.trainArrived) return;
     this.trainT -= dt;
     if (this.trainT <= 0 && tr.state !== 'run') {
       tr.depart(Math.random() < 0.5 ? 1 : -1);
-      this.trainT = 55 + Math.random() * 25;
+      this.trainT = 50 + Math.random() * 25;
     } else if (this.trainT <= 0 && Math.abs(tr.z) > 650) {
       tr.state = 'idle';
     }
     if (tr.state === 'run' && (tr.z > 420 || tr.z < -640)) tr.state = 'idle';
+  }
+  /** すぐに次の電車を走らせる（川の演出用） */
+  sendTrain(dir = 1, z = null) {
+    const tr = this.train;
+    if (this.flags.trainArrived) return;
+    tr.depart(dir);
+    if (z !== null) tr.z = z;
+    this.trainT = 60;
   }
 
   updateItems(dt) {
     // くんくん中は見つけていない物がきらっと光る
     if (this.sniffK > 0.4 && Math.random() < dt * 10) {
       for (const it of this.items) {
-        if (!it.ground || it.mesh.position.distanceTo(this.player.pos) > 16) continue;
+        if (!it.ground || !it.mesh.visible || it.mesh.position.distanceTo(this.player.pos) > 18) continue;
         this.fx.spawn({ pos: it.mesh.position.clone().add(V((Math.random() - 0.5) * 0.3, 0.15 + Math.random() * 0.2, (Math.random() - 0.5) * 0.3)), vel: V(0, 0.4, 0), color: 0xfff0b0, size: 0.16, life: 0.8, shape: 2 });
       }
       if (!this.flags.dug && this.flags.escaped) this.fx.spawn({ pos: V(DIG.x + (Math.random() - 0.5) * 0.8, 0.1 + Math.random() * 0.3, DIG.z - 0.45), vel: V(0, 0.5, 0), color: 0xffd28a, size: 0.2, life: 0.9, shape: 0 });
     }
-    // 落ちているボールはゆらゆら
-    for (const it of this.items) if (it.ground && it.id === 'cap') it.mesh.rotation.y += dt * 1.2;
+    for (const it of this.items) if (it.ground && (it.id === 'cap' || it.id === 'coin')) it.mesh.rotation.y += dt * 1.2;
   }
 
   /** 窓と穴ほりの目じるし（チュートリアル）。やることが終わったら消える */
@@ -1004,7 +764,6 @@ export class Game {
     this.markDig.show(active && F.escaped && !F.dug);
     this.markWindow.update(dt, this.camera.position, p.pos);
     this.markDig.update(dt, this.camera.position, p.pos);
-    // しばらく進まなければ、ことばでも教える
     if (active && !F.windowOpen) {
       F.winHintT = (F.winHintT || 0) + dt;
       if (F.winHintT > 9 && !F.winHinted) { F.winHinted = true; this.ui.toast('光っている窓のすき間を、鼻でおしてみよう', 'nose'); }
@@ -1016,7 +775,6 @@ export class Game {
         this.ui.toast(this.ctl.touch ? '柵の下の土が やわらかそう。印の所で「ほる」を長押し' : '柵の下の土が やわらかそう。印の所で E を長押し', 'paw');
       }
     }
-    // すき間の光はゆっくり明滅。外の風に乗って、光の粒が部屋に入ってくる
     const glow = this.town.win.glow;
     const g = !F.windowOpen && (this.state === 'play' || this.state === 'prologue') ? 1 : 0;
     this.gapK = damp(this.gapK || 0, g, g ? 2 : 5, dt);
@@ -1028,116 +786,112 @@ export class Game {
     }
   }
 
-  checkDetours(dt) {
-    const p = this.player, dp = p.pos, A = this.A;
-    if (p.grounded && dp.y > 1.3 && dp.y < 1.6 && p.support && p.support.tag === 'wall' && dp.z > 5 && dp.z < 6) {
-      this.wallT = (this.wallT || 0) + dt;
-      if (this.wallT > 3) this.detour('wall');
-    }
-    if (p.grounded && Math.hypot(dp.x - A.statue.x, dp.z - A.statue.z) < 1.1 && dp.y > 1.3) {
-      if (!this.detours.has('statue')) {
-        this.detour('statue');
-        p.dog.setPose('sit');
-        this.sayAt(A.statue.clone().add(V(0, 1.4, 0)), '（となりに すわってみた）', 2.2);
-      }
-    }
-    if (this.area === 'street' && p.run && p.dog.speed > 4) {
-      this.dashT = (this.dashT || 0) + dt;
-      if (this.dashT > 5) this.detour('dash');
-    } else if (this.area !== 'street') this.dashT = 0;
-  }
-
-  *slide() {
-    const p = this.player, S = this.A.slide;
-    p.locked = true;
-    p.puppet = true;
-    p.dog.setPose('sit');
-    p.dog.heading = Math.PI;
-    audio.play('slide');
-    let t = 0;
-    const from = V(S.top.x, S.top.y, S.top.z - 0.3);
-    while (t < 1) {
-      const dt = yield;
-      t += (dt || 0.016) / 1.1;
-      const k = t * t;
-      p.pos.set(from.x, lerp(from.y, 0, k), lerp(from.z, S.bottom.z, k));
-      p.dog.syncRoot();
-    }
-    p.pos.y = 0;
-    p.puppet = false;
-    p.grounded = true;
-    p.dog.setPose('stand');
-    p.dog.hop(1.8);
-    this.puff(p.pos, 6, 0xe0cba0);
-    p.locked = false;
-    this.detour('slide');
-  }
-
   onArea(id) {
     const ui = this.ui;
     if (id === 'lane') ui.objective('においをたどって 駅へ');
-    if (id === 'street' && !this.flags.streetHint) {
-      this.flags.streetHint = true;
-      this.run(function* () { yield 2.5; this.say(this.grandma, 'あら、かわいいお客さん', 2); }.bind(this)());
-    }
-    if (id === 'park') {
-      this.run(function* () { yield 3; if (!this.friends.has('kid')) this.say(this.kid, 'ボール、どこいっちゃったんだろう…', 2.6); }.bind(this)());
-    }
     if (id === 'road') ui.objective('信号が 青になったら わたろう');
-    if (id === 'plaza') ui.objective('改札の前で まとう（おすわり）');
+    if (id === 'plaza') ui.objective(this.hour < 17.9 ? '改札の前で まとう（おすわり）' : '改札へ いそごう！');
+    for (const f of this.hooks.area) f(id);
   }
 
   // ------------------------------------------------------------
   // 駅：電車の到着と再会
+  //   ・早く着いたら：改札の前でおすわり → 時間を早送りして 18:00 まで待つ
+  //   ・18:00 になったら：どこにいても電車は着く。あの人は改札の前で待っている
   // ------------------------------------------------------------
   checkStation(dt) {
-    const p = this.player, dp = p.pos, g = this.A.gate;
+    const p = this.player, dp = p.pos, g = this.A.gate, F = this.flags;
     const near = Math.hypot(dp.x - g.x, dp.z - g.z);
     const sitting = p.dog.poseTarget === 'sit';
-    if (this.area === 'plaza' && sitting && near < 9) this.sitT += dt;
-    else this.sitT = 0;
-    if (this.sitT > 1.2 || (this.hour >= 17.89 && near < 10)) {
-      this.flags.arrival = true;
-      this.run(this.arrival());
+    if (!F.trainArrived) {
+      if (this.area === 'plaza' && near < 10 && !F.gateHint) {
+        F.gateHint = true;
+        if (this.hour < 17.85) this.ui.toast('改札の前で おすわりすると、電車が来るまで待てる（時間がすすむ）', 'star');
+      }
+      if (this.area === 'plaza' && sitting && near < 9 && !p.locked) this.sitT += dt;
+      else this.sitT = 0;
+      if (this.sitT > 1.2) { this.sitT = 0; this.run(this.waitForTrain()); return; }
+      if (this.hour >= ARRIVE_HOUR && !p.locked) this.run(this.trainArrive());
+    } else if (F.ownerWaiting && !p.locked) {
+      const O = this.owner;
+      if (Math.hypot(dp.x - O.pos.x, dp.z - O.pos.z) < 7.5) { F.ownerWaiting = false; this.run(this.meetLate()); }
     }
   }
 
-  *arrival() {
-    const p = this.player, ui = this.ui, cam = this.cam, A = this.A;
-    this.state = 'arrival';
-    this.arrivedAt = this.hour;
-    p.locked = true;
+  /** 改札の前で 18:00 まで待つ（早送り） */
+  *waitForTrain() {
+    const p = this.player, ui = this.ui;
+    this.lock(true);
+    ui.clockFF(true);
     p.dog.setPose('sit');
     ui.objective(null);
-    ui.hud(false);
-    ui.letterbox(true);
-    // 夕暮れまで早送り
-    if (this.hour < 17.95) {
-      ui.caption('電車を まっている…', 2.4);
-      this.timelapse = { to: 17.97, rate: Math.max(0.3, (17.97 - this.hour) / 3.2) };
-      let t = 0;
-      const c0 = this.camera.position.clone();
-      cam.startCine((c, dt) => {
-        t += dt;
-        const k = smooth(clamp(t / 3.4, 0, 1));
-        c.position.lerpVectors(c0, V(p.pos.x - 3.2, p.pos.y + 1.1, p.pos.z + 2.4), k);
-        c.lookAt(p.pos.x + 6, p.pos.y + 1.6 + k * 1.5, p.pos.z - 1.5);
-        return true;
-      });
-      yield 3.4;
-      this.timelapse = null;
-    }
-    this.hour = Math.max(this.hour, 17.97);
-    // 電車が入ってくる
+    ui.caption('電車を まっている…', 3.0);
+    const to = ARRIVE_HOUR - 0.001;
+    const dur = 4.2;
+    this.timelapse = { to, rate: Math.max(0.05, (to - this.hour) / dur) };
+    const c0 = this.camera.position.clone();
+    const ang0 = Math.atan2(c0.x - p.pos.x, c0.z - p.pos.z);
+    this.post.tilt = 0.6;
+    this.cine((c, dt, t) => {
+      const k = smooth(clamp(t / dur, 0, 1));
+      const a = ang0 + k * 1.4;
+      c.position.set(p.pos.x + Math.sin(a) * lerp(3, 4.2, k), p.pos.y + lerp(1.2, 1.9, k), p.pos.z + Math.cos(a) * lerp(3, 4.2, k));
+      c.lookAt(p.pos.x, p.pos.y + 0.8 + k * 1.2, p.pos.z);
+      return true;
+    });
+    audio.play('tick');
+    yield dur + 0.2;
+    this.timelapse = null;
+    ui.clockFF(false);
+    this.hour = Math.max(this.hour, ARRIVE_HOUR);
+    yield* this.trainArrive(true);
+  }
+
+  /** 18:00 の電車。atGate なら改札の前で再会の演出、ちがえば あの人は改札で待つ */
+  *trainArrive(forceGate = false) {
+    const F = this.flags;
+    if (F.trainArrived) return;
+    F.trainArrived = true;
+    this.hour = Math.max(this.hour, ARRIVE_HOUR);
+    const p = this.player, ui = this.ui, A = this.A, O = this.owner;
+    const dp = p.pos;
+    const atGate = forceGate || Math.hypot(dp.x - A.gate.x, dp.z - A.gate.z) < 12;
     const tr = this.train;
     tr.depart(1, -34);
     tr.z = -125;
     tr.v = 16;
-    let t = 0;
+    if (!atGate) {
+      // 遠くにいる：知らせだけ出して、あの人は改札の前で待つ
+      ui.toast('18:00 電車がついた！ あの人は改札の前で まっている', 'star');
+      audio.play('chime');
+      ui.objective('改札へ いそごう！');
+      this.run(function* () {
+        yield () => tr.state === 'stop';
+        yield 2.5;
+        this.releaseCommuters();
+        yield 1.5;
+        O.hidden = false;
+        O.root.visible = true;
+        O.place(A.gateInside.x + 0.5, -71.6, -Math.PI / 2, 0.15);
+        O.speed = 1.1;
+        O.walkTo(A.gate.x - 1.0, -72);
+        yield () => !O.target;
+        O.heading = -Math.PI / 2;
+        F.ownerWaiting = true;
+        F.ownerReady = true;
+      }.bind(this)());
+      return;
+    }
+    this.arrivedAt = this.hour;
+    this.state = 'arrival';
+    this.lock(true);
+    p.dog.setPose('sit');
+    ui.objective(null);
     // 広場から、入ってくる電車の先頭を追う
     const look = V(142, 11, tr.z);
-    cam.startCine((c, dt) => {
-      t += dt;
+    this.post.tilt = 0.4;
+    this.post.tiltFocus = 0.5;
+    this.cine((c, dt, t) => {
       const k = smooth(clamp(t / 7, 0, 1));
       c.position.set(lerp(121, 122.5, k), lerp(9.6, 8.8, k), lerp(-67, -65, k));
       look.x = 142;
@@ -1151,21 +905,11 @@ export class Game {
     audio.play('chime');
     ui.caption('「ひだまり〜、ひだまり〜」', 2.4);
     yield 2.2;
-    // 改札から人が出てくる
-    const O = this.owner;
-    const out = [V(131, 0.15, -69.5), V(131.2, 0.15, -74.6), V(130.8, 0.15, -71)];
-    const exits = [V(112, 0.15, -48), V(118, 0.15, -97), V(97, 0.15, -64)];
-    this.commuters.forEach((c, i) => {
-      c.hidden = false;
-      c.root.visible = true;
-      c.place(A.gateInside.x + 1.5 + i * 0.8, [-69.5, -74.6, -76][i], -Math.PI / 2, 0.15);
-      c.speed = 1.3;
-      this.run(function* () { yield i * 0.7; c.walkTo(out[i].x, out[i].z, () => c.walkTo(exits[i].x, exits[i].z, () => { c.root.visible = false; c.hidden = true; })); }.bind(this)());
-    });
+    this.releaseCommuters();
     // 犬の肩ごしに改札を見る
-    t = 0;
-    cam.startCine((c, dt) => {
-      t += dt;
+    this.post.tilt = 0.55;
+    this.post.tiltFocus = 0.55;
+    this.cine((c, dt, t) => {
       const k = smooth(clamp(t / 4, 0, 1));
       const bx = p.pos.x - 1.6, bz = p.pos.z + 1.2;
       c.position.set(bx - k * 0.3, p.pos.y + 0.75, bz);
@@ -1178,14 +922,51 @@ export class Game {
     O.root.visible = true;
     O.place(A.gateInside.x + 0.5, -71.6, -Math.PI / 2, 0.15);
     O.speed = 1.25;
-    // 改札を出て、広場に一歩出たところで立ち止まる
     const oz = clamp(p.pos.z, -75.5, -68.5);
     const ox = p.pos.x < 127 ? 129.4 : Math.min(A.gate.x - 0.3, p.pos.x + 2.2);
     O.walkTo(ox, oz);
     yield () => !O.target;
+    yield* this.notice(false);
+  }
+
+  releaseCommuters() {
+    const A = this.A;
+    const out = [V(131, 0.15, -69.5), V(131.2, 0.15, -74.6), V(130.8, 0.15, -71), V(131, 0.15, -73)];
+    const exits = [V(112, 0.15, -48), V(118, 0.15, -97), V(97, 0.15, -64), V(112, 0.15, -104)];
+    this.commuters.forEach((c, i) => {
+      c.hidden = false;
+      c.root.visible = true;
+      c.place(A.gateInside.x + 1.5 + i * 0.8, [-69.5, -74.6, -76, -70.5][i], -Math.PI / 2, 0.15);
+      c.speed = 1.3;
+      this.run(function* () { yield i * 0.7; c.walkTo(out[i].x, out[i].z, () => c.walkTo(exits[i].x, exits[i].z, () => { c.root.visible = false; c.hidden = true; })); }.bind(this)());
+    });
+  }
+
+  /** おそく着いた：待っていたあの人に、かけよる */
+  *meetLate() {
+    const p = this.player, O = this.owner;
+    this.arrivedAt = this.hour;
+    this.state = 'arrival';
+    this.lock(true);
+    this.flags.late = true;
+    const mid = V((p.pos.x + O.pos.x) / 2, 0.15, (p.pos.z + O.pos.z) / 2);
+    this.cine((c, dt, t) => {
+      const a = Math.atan2(p.pos.x - O.pos.x, p.pos.z - O.pos.z) + Math.PI / 2;
+      c.position.set(mid.x + Math.sin(a) * 4.5, 1.6, mid.z + Math.cos(a) * 4.5);
+      c.lookAt(mid.x, 1.0, mid.z);
+      if (c.fov !== 45) { c.fov = 45; c.updateProjectionMatrix(); }
+      return true;
+    });
+    yield* this.notice(true);
+  }
+
+  /** 気づいて、しゃがんで、かけよる */
+  *notice(late) {
+    const p = this.player, O = this.owner, ui = this.ui, cam = this.cam;
     O.lookAt = p.pos.clone().setY(p.pos.y + 0.3);
+    O.heading = Math.atan2(p.pos.x - O.pos.x, p.pos.z - O.pos.z);
     yield 0.5;
-    this.say(O, '…え？', 1.4);
+    this.say(O, late ? '…あっ！' : '…え？', 1.4);
     yield 1.4;
     this.say(O, `${this.dogName}！？`, 1.8);
     p.dog.setPose('stand');
@@ -1198,24 +979,23 @@ export class Game {
     O.pose = 'hug';
     O.kneel = true;
     // ここだけ自分で走る
-    cam.endCine();
-    this.camera.fov = 55;
-    this.camera.updateProjectionMatrix();
-    cam.yaw = Math.atan2(p.pos.x - O.pos.x, p.pos.z - O.pos.z);
-    cam.pitch = 0.22;
+    this.endCine(Math.atan2(p.pos.x - O.pos.x, p.pos.z - O.pos.z), 0.22);
     ui.letterbox(false);
     ui.hud(true);
     ui.objective('かけよろう！');
     this.state = 'play';
+    this.flags.arrival = true;
     p.locked = false;
+    this.cineLock = false;
     const t0 = this.t;
     const self = this;
     yield (function () {
       const d = Math.hypot(p.pos.x - O.pos.x, p.pos.z - O.pos.z);
-      if (self.t - t0 > 4 && d > 1.4) self.autoRun = O.pos; // 自動で駆けよる
+      if (self.t - t0 > 4 && d > 1.4) self.autoRun = O.pos;
       return d < 1.25;
     });
     this.autoRun = null;
+    void cam;
     this.run(this.reunion());
   }
 
@@ -1227,6 +1007,7 @@ export class Game {
     ui.objective(null);
     ui.hud(false);
     ui.letterbox(true);
+    this.ev.hideAll();
     audio.play('fanfare');
     const h0 = Math.atan2(p.pos.x - O.pos.x, p.pos.z - O.pos.z);
     O.heading = h0;
@@ -1237,7 +1018,6 @@ export class Game {
     if (turn < 2.4) turn += Math.PI * 2;
     O.kneel = true;
     O.pose = 'hug';
-    // 腕の中の位置（胸の前・少し横向き）
     const arms = (out) => {
       const f = V(Math.sin(O.heading), 0, Math.cos(O.heading));
       const r = V(Math.cos(O.heading), 0, -Math.sin(O.heading));
@@ -1263,7 +1043,6 @@ export class Game {
     this.sparkle(p.pos.clone().add(V(0, 0.4, 0)), 18, 0xffe0a0);
     const gift = p.carry ? p.carry.id : 'none';
     this.giftId = GIFTS[gift] ? gift : 'none';
-    // ぎゅっ → くるっと一回転 → 正面へ
     let ct = 0;
     const self = this;
     this.carryUpdate = (dt) => {
@@ -1273,7 +1052,6 @@ export class Game {
       const spin = smooth(clamp((ct - 1.0) / 2.6, 0, 1)) * turn;
       O.heading = h0 + spin + Math.sin(ct * 2.2) * 0.05 * (ct > 3.6 ? 1 : 0);
       arms(p.pos);
-      // 抱っこ：犬も前を向いて、ほっぺを寄せる
       d.heading = O.heading - 0.35;
       d.air = 0.75;
       d.excite = 1;
@@ -1283,20 +1061,27 @@ export class Game {
       O.lookAt = d.headWorld;
       if (ct < 6.5 && Math.random() < dt * 2) self.hearts(p.pos.clone().add(V((Math.random() - 0.5) * 0.9, 1.2, (Math.random() - 0.5) * 0.9)), 1);
     };
-    // 正面から、ゆっくり回りこむ
     let orbit = camA - 0.35;
+    this.post.tilt = 0.45;
+    this.post.tiltFocus = 0.58;
     cam.startCine((c, dt) => {
       orbit += dt * 0.05;
-      // 縦長の画面では横が狭いので引いて、頭の上（吹き出し）にも余白を残す
       const narrow = c.aspect < 1;
       const r = Math.max(2.2, 3.0 - ct * 0.1) * (narrow ? 1.7 : 1);
-      // 目線は顔の高さ。抱っこした犬の頭ごしに、飼い主の顔が見えるように
       c.position.set(O.pos.x + Math.sin(orbit) * r, O.pos.y + 1.58, O.pos.z + Math.cos(orbit) * r);
       c.lookAt(O.pos.x, O.pos.y + (narrow ? 1.22 : 1.3), O.pos.z);
       if (c.fov !== 38) { c.fov = 38; c.updateProjectionMatrix(); }
       return true;
     });
     yield 3.4;
+    if (this.flags.late) {
+      this.say(O, 'まっててくれたんじゃなくて…さがしに来てくれたの？', 3.0);
+      yield 3.2;
+    }
+    if (this.flags.wet) {
+      this.say(O, '…え、なんで ぬれてるの？ ふふ、川で遊んできたの？', 3.0);
+      yield 3.2;
+    }
     if (gift !== 'none') {
       this.say(O, 'これ、くれるの？', 1.8);
       yield 2.0;
@@ -1306,7 +1091,6 @@ export class Game {
     yield 3.5;
     this.say(O, 'いっしょに かえろっか', 2.2);
     yield 1.6;
-    // 写真
     ui.flash();
     audio.play('shutter');
     this.photo = this.capture();
@@ -1327,21 +1111,17 @@ export class Game {
   finish() {
     const s = this.save;
     s.clears = (s.clears || 0) + 1;
-    s.friends = [...new Set([...(s.friends || []), ...this.friends])];
+    const done = [...this.ev.done];
+    s.events = [...new Set([...(s.events || []), ...done])];
+    s.friends = [...new Set([...(s.friends || []), ...done.filter((id) => FRIEND_IDS.includes(id))])];
     s.gifts = [...new Set([...(s.gifts || []), this.giftId])];
-    s.detours = [...new Set([...(s.detours || []), ...this.detours])];
     const arrive = this.arrivedAt || this.hour;
     if (!s.best || arrive < s.best) s.best = arrive;
     this.result = {
-      name: this.dogName, arrive, friends: [...this.friends], gift: this.giftId, detours: [...this.detours],
-      photo: this.photo, totalFriends: s.friends.length, totalGifts: s.gifts.length, clears: s.clears,
+      name: this.dogName, arrive, late: !!this.flags.late, gift: this.giftId, events: done,
+      friends: done.filter((id) => FRIEND_IDS.includes(id)), memories: this.ev.memories.slice(),
+      photo: this.photo, totalEvents: s.events.length, totalGifts: s.gifts.length, clears: s.clears, fortune: this.fortune || null,
     };
     if (this.onFinish) this.onFinish(this.result);
-  }
-
-  /** 結果画面の後ろで、ふたりで歩いて帰る */
-  epilogue(dt) {
-    if (!this.carryUpdate) return;
-    this.carryUpdate(dt);
   }
 }

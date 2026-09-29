@@ -7,8 +7,10 @@ import { TPCam } from './tpcam.js';
 import { Controls } from './controls.js';
 import { WIND } from './build.js';
 import { GRASS } from './nature.js';
+import { FUR } from './look.js';
 import { UI } from './ui.js';
-import { Game, FRIENDS, GIFTS, DETOURS } from './game.js';
+import { Game, GIFTS, EVENTS, KINDS } from './game.js';
+import { AREA_NAMES } from './events.js';
 import { loadSave, save, getSave } from './save.js';
 import { shareDiary, fmtHour } from './share.js';
 import { BREEDS, COLORS, breedParams, defaultDogParams, colorHex } from '../dogModel.js';
@@ -39,9 +41,10 @@ let qSetting = data.settings.quality ?? 'auto';
 let level = qSetting === 'auto' ? (touch ? 1 : 2) : Number(qSetting);
 const PR = [1, 1.5, 2];
 renderer.setPixelRatio(Math.min(devicePixelRatio, PR[level]));
+FUR.shells = [3, 5, 7][level];
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 380);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 420);
 setLoading('空と光を準備中…');
 const day = new DayCycle(scene, renderer);
 day.setHour(17.2);
@@ -75,32 +78,53 @@ function applyShadowQuality() {
 applyShadowQuality();
 
 // ------------------------------------------------------------
-// タイトルの空撮（町を夕方に流していく）
+// タイトルの空撮：神社の石段 → 高台 → 町の上 → 商店街 → 公園 → 川（橋の下をくぐる）→ 鉄橋 → 駅
 // ------------------------------------------------------------
-const FLY = new THREE.CatmullRomCurve3([
-  new THREE.Vector3(30, 2.4, 8.6), new THREE.Vector3(40.5, 2.6, 8.2), new THREE.Vector3(43, 2.8, 1),
-  new THREE.Vector3(43, 2.6, -20), new THREE.Vector3(43.5, 3.0, -42), new THREE.Vector3(48, 4.0, -58), new THREE.Vector3(58, 3.4, -70),
-  new THREE.Vector3(72, 4.2, -73), new THREE.Vector3(86, 5.0, -71), new THREE.Vector3(100, 3.4, -68), new THREE.Vector3(114, 2.6, -74),
-]);
-const FLY_LOOK = new THREE.CatmullRomCurve3([
-  new THREE.Vector3(42, 1.6, 7.5), new THREE.Vector3(44, 2.2, -2), new THREE.Vector3(43, 2.6, -16),
-  new THREE.Vector3(43, 2.5, -40), new THREE.Vector3(46, 2.2, -58), new THREE.Vector3(54, 1.8, -76), new THREE.Vector3(70, 2, -76),
-  new THREE.Vector3(86, 3, -72), new THREE.Vector3(108, 4.5, -68), new THREE.Vector3(130, 6, -72), new THREE.Vector3(140, 9, -72),
-]);
-let flyT = 0;
-const FLY_DUR = 64;
+const FLY_PTS = [
+  [-26.5, 1.3, 8.7, -46, 4.8, 8.5],
+  [-35, 3.2, 8.6, -52, 8.4, 8.5],
+  [-45, 8.7, 8.6, -62, 9.2, 8.5],
+  [-54, 9.8, 5.5, -72, 9.6, 8.5],
+  [-58, 10.2, -6, -66, 10.5, -12],
+  [-54.5, 10.8, -19, -30, 5, -30],
+  [-30, 19, -26, 30, 2, -35],
+  [18, 17, -12, 43, 4, -18],
+  [40, 8, 5, 43, 3, -18],
+  [43, 3.4, -12, 43, 2.8, -40],
+  [43, 3.2, -38, 50, 2, -62],
+  [50, 6.5, -60, 60, 1, -82],
+  [58, 6.5, -84, 62, 0, -108],
+  [60, 3.5, -106, 90, -2, -128],
+  [72, -1.6, -123, 100, -2, -128],
+  [88, -1.95, -125, 120, -1, -130],
+  [104, -1.2, -127, 142, 8, -138],
+  [124, 2.5, -131, 142, 10.5, -140],
+  [134, 12, -116, 132, 6, -84],
+  [126, 7, -92, 134, 2.5, -72],
+  [118, 4, -78, 134, 2.2, -72],
+];
+const FLY = new THREE.CatmullRomCurve3(FLY_PTS.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
+const FLY_LOOK = new THREE.CatmullRomCurve3(FLY_PTS.map((p) => new THREE.Vector3(p[3], p[4], p[5])));
+let flyT = 0.004;
+const FLY_DUR = 92;
 const fadeEl = $('fade');
+let trainSent = false;
 function titleCam(c, dt) {
   flyT = (flyT + dt / FLY_DUR) % 1;
   const k = flyT;
   c.position.copy(FLY.getPointAt(k));
-  c.lookAt(FLY_LOOK.getPointAt(Math.min(1, k + 0.02)));
+  c.lookAt(FLY_LOOK.getPointAt(Math.min(1, k + 0.012)));
   if (c.fov !== 50) { c.fov = 50; c.updateProjectionMatrix(); }
+  // 川で、ちょうど鉄橋を電車がわたるように
+  if (k > 0.66 && k < 0.7 && !trainSent) { trainSent = true; game.sendTrain(1, -320); }
+  if (k < 0.1) trainSent = false;
   // 一周のつなぎ目は暗転
   if (mode === 'title') {
-    const edge = Math.max(smooth(clamp((k - 0.955) / 0.04, 0, 1)), 1 - smooth(clamp(k / 0.025, 0, 1)));
+    const edge = Math.max(smooth(clamp((k - 0.96) / 0.035, 0, 1)), 1 - smooth(clamp(k / 0.02, 0, 1)));
     fadeEl.style.transition = 'none';
     fadeEl.style.opacity = String(edge);
+    post.tilt = 0.55;
+    post.tiltFocus = 0.5;
   }
   return true;
 }
@@ -119,6 +143,7 @@ function customCam(c) {
   c.lookAt(d.pos.x, 0.3, d.pos.z);
   if (c.fov !== 42) c.fov = 42;
   c.setViewOffset(W, H, W * (0.5 - cx), H * (0.5 - cy), W, H);
+  post.tilt = 0;
   return true;
 }
 
@@ -140,7 +165,7 @@ function step(dt) {
   cam.update(dt, player);
   const hour = game.hour;
   day.setHour(hour);
-  if (mode === 'title') focus.copy(FLY_LOOK.getPointAt(Math.min(1, flyT + 0.02)));
+  if (mode === 'title') focus.copy(FLY_LOOK.getPointAt(Math.min(1, flyT + 0.012)));
   else focus.copy(player.pos);
   day.update(dt, focus, camera.position);
   town.update(dt, t, hour, camera.position, focus);
@@ -149,7 +174,7 @@ function step(dt) {
   post.grade.uniforms.uDusk.value = day.dusk;
   ui.updateBubbles();
   const h = renderer.domElement.height;
-  game.fx.setScale(h); game.dust.setScale(h); game.trail.fx.setScale(h);
+  game.fx.setScale(h); game.dust.setScale(h); game.trail.fx.setScale(h); game.motes.setScale(h);
 }
 
 // 画質の自動調整
@@ -184,6 +209,7 @@ function frame(now) {
   if (manual || mode === 'loading') return;
   if (!paused) step(dt);
   post.render(dt);
+  game.afterRender(dt);
   autoQuality(dt);
 }
 requestAnimationFrame(frame);
@@ -204,7 +230,7 @@ function show(id) {
 function refreshTitle() {
   const s = getSave();
   const lines = [];
-  if (s.clears) lines.push(`おむかえ ${s.clears}回 ・ ともだち ${s.friends.length}/${FRIENDS.length} ・ おみやげ ${s.gifts.length}/${Object.keys(GIFTS).length}`);
+  if (s.clears) lines.push(`おむかえ ${s.clears}回 ・ できごと ${(s.events || []).length}/${EVENTS.length} ・ おみやげ ${s.gifts.length}/${Object.keys(GIFTS).length}`);
   if (s.best) lines.push(`いちばん早い到着 ${fmtHour(s.best)}`);
   $('title-stats').textContent = '';
   lines.forEach((l) => { const d = document.createElement('div'); d.textContent = l; $('title-stats').appendChild(d); });
@@ -221,7 +247,7 @@ function enterTitle() {
   show('screen-title');
   ui.hud(false);
   cam.startCine(titleCam);
-  day.fogScale = 1.15;
+  day.fogScale = 1.35;
   refreshTitle();
   soundLabel();
 }
@@ -233,12 +259,14 @@ function startGame() {
   show(null);
   mode = 'play';
   day.fogScale = 1;
+  post.tilt = 0;
   camera.clearViewOffset();
   ui.fade(1, 0.5);
   setTimeout(() => {
     cam.override = null;
     game.start(dogParams);
     audio.startBgm();
+    audio.startAmbience();
   }, 520);
 }
 
@@ -305,14 +333,115 @@ $('btn-custom-ok').addEventListener('click', () => {
   enterTitle();
 });
 
-// 一時停止
+// ------------------------------------------------------------
+// 一時停止：町の地図と、できごとの一覧
+// ------------------------------------------------------------
+// 地図の範囲（x: 西→東、z: 北が上）
+const MAP = { x0: -92, x1: 212, z0: -176, z1: 32 };
+function drawMap() {
+  const cv = $('pause-map');
+  const c = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const sx = W / (MAP.x1 - MAP.x0), sz = H / (MAP.z1 - MAP.z0);
+  const s = Math.min(sx, sz);
+  const ox = (W - (MAP.x1 - MAP.x0) * s) / 2, oz = (H - (MAP.z1 - MAP.z0) * s) / 2;
+  const X = (x) => ox + (x - MAP.x0) * s;
+  const Y = (z) => oz + (z - MAP.z0) * s;
+  const rect = (x0, z0, x1, z1, col) => { c.fillStyle = col; c.fillRect(X(x0), Y(z0), (x1 - x0) * s, (z1 - z0) * s); };
+  c.clearRect(0, 0, W, H);
+  c.fillStyle = '#efe4d2';
+  c.fillRect(0, 0, W, H);
+  // 川
+  rect(-92, -166, 212, -110, '#cfe3cf');
+  rect(-92, -146.4, 212, -134, '#8fbfd2');
+  rect(-92, -114, 212, -110, '#e6dccb');
+  // 神社の高台
+  rect(-84, -28, -50, 28, '#d6e3c2');
+  rect(-50, 7, -34, 10, '#cfc6b6');
+  // 家と庭、路地
+  rect(-6, -7, 13.5, 5.6, '#d9e8c4');
+  rect(-36, 5.6, 48, 11.3, '#d8d0c4');
+  // 商店街
+  rect(39, -49, 47, 5.6, '#f2d2b0');
+  // 公園
+  rect(26, -96, 79, -49.5, '#cfe3b6');
+  c.fillStyle = '#9cc8d8';
+  c.beginPath(); c.ellipse(X(52), Y(-80), 8.6 * s, 5.8 * s, 0, 0, Math.PI * 2); c.fill();
+  // 道路
+  rect(81, -176, 93, 32, '#bdb6ac');
+  // 駅前広場と駅
+  rect(95, -100, 130, -44, '#eadfcf');
+  rect(130, -106, 150, -38, '#c9b8a2');
+  rect(138.2, -176, 145.8, 32, '#a8998a');
+  // 路地
+  rect(53.8, -106, 61.2, -96, '#d8d0c4');
+  rect(108.5, -110, 115.5, -100, '#eadfcf');
+  // 名前
+  c.fillStyle = 'rgba(90, 60, 40, .75)';
+  c.font = `800 ${Math.round(13 * W / 720)}px "M PLUS Rounded 1c", sans-serif`;
+  c.textAlign = 'center';
+  const label = (t, x, z) => c.fillText(t, X(x), Y(z));
+  label('ひだまり神社', -66, -18);
+  label('家', 3, -2);
+  label('路地', 5, 16);
+  label('商店街', 43, -52);
+  label('さくら公園', 52, -64);
+  label('ひだまり川', 20, -150);
+  label('駅', 140, -30);
+  // できごと
+  const list = game.ev.list();
+  const seen = new Set(getSave().events || []);
+  for (const e of list) {
+    if (!e.pos) continue;
+    const x = X(e.pos.x), y = Y(e.pos.z);
+    c.beginPath();
+    c.arc(x, y, e.done ? 6 : 7, 0, Math.PI * 2);
+    c.fillStyle = e.done ? KINDS[e.kind].color : 'rgba(255,255,255,.9)';
+    c.fill();
+    c.lineWidth = 2.5;
+    c.strokeStyle = KINDS[e.kind].color;
+    c.stroke();
+    if (!e.done) {
+      c.fillStyle = KINDS[e.kind].color;
+      c.font = `800 ${Math.round(10 * W / 720)}px sans-serif`;
+      c.fillText(seen.has(e.id) ? '・' : '?', x, y + 4);
+    }
+  }
+  // いまいる所
+  const p = player.pos;
+  c.save();
+  c.translate(X(p.x), Y(p.z));
+  c.rotate(-player.dog.heading + Math.PI);
+  c.fillStyle = '#e8744f';
+  c.strokeStyle = '#fff';
+  c.lineWidth = 3;
+  c.beginPath(); c.moveTo(0, -11); c.lineTo(8, 8); c.lineTo(0, 4); c.lineTo(-8, 8); c.closePath();
+  c.fill(); c.stroke();
+  c.restore();
+  // 一覧
+  const box = $('pause-list');
+  box.textContent = '';
+  for (const e of list) {
+    const d = document.createElement('div');
+    d.className = 'pl-item ' + (e.done ? 'done' : 'todo');
+    const i = document.createElement('i');
+    i.style.background = KINDS[e.kind].color;
+    d.appendChild(i);
+    const s2 = document.createElement('span');
+    s2.textContent = e.done || seen.has(e.id) ? e.title : `？？？（${AREA_NAMES[e.area]}）`;
+    d.appendChild(s2);
+    box.appendChild(d);
+  }
+  $('pm-count').textContent = `できごと ${game.ev.done.size} / ${EVENTS.length}`;
+}
+
 function pause(on) {
   if (mode !== 'play') return;
   paused = on;
   show(on ? 'screen-pause' : null);
   $('quality-state').textContent = QUALITY[qSetting];
   soundLabel();
-  if (on) audio.stopBgm(0.3); else audio.startBgm();
+  if (on) { drawMap(); audio.stopBgm(0.3); audio.duck(true); } else { audio.startBgm(); audio.duck(false); }
 }
 $('btn-pause').addEventListener('click', () => pause(true));
 $('btn-resume').addEventListener('click', () => pause(false));
@@ -335,7 +464,9 @@ addEventListener('keydown', (e) => {
   if ((e.code === 'Escape' || e.code === 'KeyP') && mode === 'play') pause(!paused);
 });
 
-// 結果
+// ------------------------------------------------------------
+// 結果：おむかえ日記（再会の写真と、思い出アルバム）
+// ------------------------------------------------------------
 let lastResult = null;
 game.onFinish = (r) => {
   save();
@@ -345,23 +476,42 @@ game.onFinish = (r) => {
 };
 function showResult(r) {
   audio.setBgmMood('normal');
-  $('r-title').textContent = `${r.name}、駅までおむかえに行けました`;
+  $('r-title').textContent = r.late ? `${r.name}、駅まで さがしに来てくれました` : `${r.name}、駅までおむかえに行けました`;
   $('r-photo').src = r.photo || '';
-  $('r-time').textContent = '18:00 ひだまり駅';
+  $('r-time').textContent = `${fmtHour(r.arrive)} ひだまり駅`;
   $('r-gift').textContent = GIFTS[r.gift].label;
-  $('r-friends').textContent = `${r.friends.length} / ${FRIENDS.length}`;
-  $('r-arrive').textContent = fmtHour(r.arrive);
+  $('r-events').textContent = `${r.events.length} / ${EVENTS.length}`;
+  $('r-arrive').textContent = r.late ? `${fmtHour(r.arrive)}（おくれて）` : fmtHour(r.arrive);
+  const al = $('r-album');
+  al.textContent = '';
+  const pick = r.memories.filter((m) => m.url);
+  // 種類がばらけるように、最大6枚
+  const shown = [];
+  for (const k of ['view', 'friend', 'play', 'item']) for (const m of pick) if (m.kind === k && shown.length < 6 && !shown.includes(m) && shown.filter((x) => x.kind === k).length < 2) shown.push(m);
+  for (const m of pick) if (shown.length < 6 && !shown.includes(m)) shown.push(m);
+  shown.forEach((m, i) => {
+    const f = document.createElement('figure');
+    f.style.setProperty('--r', `${(i % 2 ? 1 : -1) * (1 + (i % 3))}deg`);
+    const img = document.createElement('img');
+    img.src = m.url;
+    img.alt = m.title;
+    const cap = document.createElement('figcaption');
+    cap.textContent = m.title;
+    f.append(img, cap);
+    al.appendChild(f);
+  });
+  al.style.display = shown.length ? '' : 'none';
   const st = $('r-stamps');
   st.innerHTML = '';
-  for (const f of FRIENDS) if (r.friends.includes(f.id)) { const s = document.createElement('span'); s.className = 'stamp friend'; s.textContent = f.name; st.appendChild(s); }
-  for (const d of r.detours) { const s = document.createElement('span'); s.className = 'stamp'; s.textContent = DETOURS[d]; st.appendChild(s); }
+  if (r.fortune) { const s = document.createElement('div'); s.className = 'r-fortune'; s.textContent = `おみくじ 大吉：${r.fortune}`; st.appendChild(s); }
+  for (const e of EVENTS) if (r.events.includes(e.id) && e.kind === 'friend') { const s = document.createElement('span'); s.className = 'stamp friend'; s.textContent = e.title; st.appendChild(s); }
   const s = getSave();
-  const missF = FRIENDS.filter((f) => !s.friends.includes(f.id));
+  const missE = EVENTS.filter((e) => !(s.events || []).includes(e.id));
   const missG = Object.keys(GIFTS).length - s.gifts.length;
   const tips = [];
-  if (missF.length) tips.push(`まだ会っていない ともだち：${missF.length}人（${missF[0].where}に だれかいるかも）`);
-  if (missG > 0) tips.push(`おみやげで、飼い主の反応がかわる（あと${missG}種類）`);
-  $('r-next').textContent = tips.join(' ／ ') || 'ぜんぶの ともだちと おみやげを見つけました！';
+  if (missE.length) tips.push(`まだ見ていない できごと：${missE.length}こ（${AREA_NAMES[missE[0].area]}に なにかあるかも）`);
+  if (missG > 0) tips.push(`おみやげで、あの人の反応がかわる（あと${missG}種類）`);
+  $('r-next').textContent = tips.join(' ／ ') || 'ぜんぶの できごとと おみやげを見つけました！';
   show('screen-result');
   ui.hud(false);
 }
@@ -400,7 +550,7 @@ window.__adv = {
   THREE, renderer, scene, camera, day, town, player, cam, ctl, post, game, ui,
   get mode() { return mode; },
   setManual(v) { manual = v; },
-  sim(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) step(dt); post.render(dt); },
+  sim(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) step(dt); post.render(dt); game.afterRender(dt * n); },
   start() { startGame(); },
   setHour(h) { game.hour = h; day.setHour(h); },
   teleport(x, y, z, hd = 0) { player.place(x, y, z, hd); cam.snap(player); },
@@ -409,6 +559,8 @@ window.__adv = {
   },
   unview() { cam.override = null; cam.blend = 1; },
   setLevel,
+  pause,
+  showResult,
   stats() {
     renderer.render(scene, camera);
     return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures, progs: renderer.info.programs.length };

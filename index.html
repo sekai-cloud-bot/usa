@@ -26,7 +26,7 @@
     </div>
     <div id="objective" class="objective"><i class="obj-dot"></i><span id="objective-text"></span></div>
     <div class="hud-right">
-      <div id="friends-pill" class="pill friends"><i class="paw"></i>ともだち <b id="friends-n">0</b></div>
+      <div id="events-pill" class="pill events"><i class="star-ico"></i>できごと <b id="events-n">0</b><small id="events-total">/31</small></div>
       <button id="btn-pause" class="round" aria-label="一時停止"><i class="pause-ico"></i></button>
     </div>
     <div id="carry" class="carry"><i class="mouth"></i>くわえている：<b id="carry-label"></b></div>
@@ -54,10 +54,15 @@
   <div id="caption" class="caption"></div>
   <div id="area-card" class="area-card"><div class="ac-line"></div><div id="ac-name" class="ac-name"></div><div id="ac-sub" class="ac-sub"></div><div class="ac-line"></div></div>
   <div id="title-card" class="title-card"><div id="tc-main" class="tc-main"></div><div id="tc-sub" class="tc-sub"></div></div>
-  <div id="friend-card" class="friend-card">
-    <div class="fc-head"><i id="fc-dot" class="fc-dot"></i><div><div class="fc-kicker">ともだちになった <em id="fc-new">NEW</em></div><div id="fc-name" class="fc-name"></div></div></div>
-    <div id="fc-line" class="fc-line"></div>
-    <div id="fc-count" class="fc-count"></div>
+  <!-- 思い出カード（できごとの写真） -->
+  <div id="memory" class="memory">
+    <div class="m-photo"><img id="m-img" alt=""></div>
+    <div class="m-body">
+      <div class="m-kicker"><i class="m-dot"></i><span id="m-kind"></span><em id="m-new">NEW</em></div>
+      <div id="m-title" class="m-title"></div>
+      <div id="m-line" class="m-line"></div>
+      <div id="m-count" class="m-count"></div>
+    </div>
   </div>
   <div id="flash" class="flash"></div>
   <div id="fade" class="fade"></div>
@@ -100,16 +105,25 @@
 
   <!-- 一時停止 -->
   <div id="screen-pause" class="screen sheet hidden">
-    <div class="sheet-card narrow">
-      <div class="sheet-title">ひとやすみ</div>
-      <button id="btn-resume" class="cta">つづける</button>
-      <button id="btn-sound2" class="sub">おと：<b id="sound-state2">ON</b></button>
-      <button id="btn-quality" class="sub">画質：<b id="quality-state">自動</b></button>
-      <button id="btn-restart" class="sub">さいしょから</button>
-      <button id="btn-quit" class="sub ghost">タイトルへ</button>
-      <div class="help">
-        <div><b>PC</b> WASD/矢印 移動 ・ Shift 走る ・ Space ジャンプ ・ E アクション ・ F長押し くんくん ・ Q ほえる ・ C おすわり ・ ドラッグ/ホイール カメラ</div>
-        <div><b>スマホ</b> 左をなぞって移動（大きく倒すと走る）・右をなぞってカメラ・右下のボタン</div>
+    <div class="pause-card">
+      <div class="pause-map">
+        <div class="pm-title">ひだまり町 <span id="pm-count"></span></div>
+        <canvas id="pause-map" width="720" height="540" aria-label="町の地図"></canvas>
+        <div class="pm-legend"><span><i style="background:#ff8fa8"></i>ともだち</span><span><i style="background:#f6c24a"></i>みつけた</span><span><i style="background:#6fd3ae"></i>よりみち</span><span><i style="background:#a99bff"></i>けしき</span></div>
+        <div id="pause-list" class="pause-list"></div>
+      </div>
+      <div class="pause-side">
+        <div class="sheet-title">ひとやすみ</div>
+        <button id="btn-resume" class="cta">つづける</button>
+        <button id="btn-sound2" class="sub">おと：<b id="sound-state2">ON</b></button>
+        <button id="btn-quality" class="sub">画質：<b id="quality-state">自動</b></button>
+        <button id="btn-restart" class="sub">さいしょから</button>
+        <button id="btn-quit" class="sub ghost">タイトルへ</button>
+        <div class="help">
+          <div><b>PC</b> WASD/矢印 移動 ・ Shift 走る ・ Space ジャンプ ・ E アクション ・ F長押し くんくん ・ Q ほえる ・ C おすわり ・ ドラッグ/ホイール カメラ</div>
+          <div><b>スマホ</b> 左をなぞって移動（大きく倒すと走る）・右をなぞってカメラ・右下のボタン</div>
+          <div><b>ヒント</b> 光る印は「できごと」。くんくんすると、遠くの印も光の柱になって見える</div>
+        </div>
       </div>
     </div>
   </div>
@@ -122,9 +136,10 @@
       <div class="r-photo"><img id="r-photo" alt="再会の写真"><div id="r-time" class="r-time"></div></div>
       <div class="r-grid">
         <div class="r-cell"><span>おみやげ</span><b id="r-gift"></b></div>
-        <div class="r-cell"><span>ともだち</span><b id="r-friends"></b></div>
+        <div class="r-cell"><span>できごと</span><b id="r-events"></b></div>
         <div class="r-cell"><span>到着</span><b id="r-arrive"></b></div>
       </div>
+      <div id="r-album" class="r-album"></div>
       <div id="r-stamps" class="r-stamps"></div>
       <div id="r-next" class="r-next"></div>
       <div class="r-actions">

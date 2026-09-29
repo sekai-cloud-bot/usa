@@ -219,7 +219,7 @@ export class Person {
   animate(dt, look) {
     const r = this.rig;
     const k = this.poseK;
-    for (const p of ['wave', 'crouch', 'hug', 'give', 'flag', 'sit', 'cheer']) k[p] = damp(k[p] || 0, this.pose === p || (p === 'crouch' && this.kneel) ? 1 : 0, 6, dt);
+    for (const p of ['wave', 'crouch', 'hug', 'give', 'flag', 'sit', 'cheer', 'play', 'strum', 'clap']) k[p] = damp(k[p] || 0, (this.pose === p || (p === 'crouch' && this.kneel) || (p === 'sit' && this.seated)) ? 1 : 0, 6, dt);
     this.phase += dt * (this.walking ? 7.5 * (this.speed / 1.15) : 0);
     const w = this.walking ? 1 : 0;
     this.wk = damp(this.wk || 0, w, 8, dt);
@@ -247,6 +247,12 @@ export class Person {
     aR += -k.hug * 1.2 - k.give * 1.3 - k.wave * 2.7 - k.flag * 1.6 - k.cheer * 2.6 - st * 0.45;
     zL += -k.hug * 0.55 - k.cheer * 0.35;
     zR += k.hug * 0.55 + k.cheer * 0.35 - k.wave * (0.3 + Math.sin(this.t * 9) * 0.25);
+    // ハーモニカ（両手を口もとへ）・ギター（左手はネック、右手でかき鳴らす）・拍手
+    const pl = k.play, sm = k.strum, cl = k.clap;
+    aL += pl * (-1.95 + st * 0.45) + sm * (-0.95 + st * 0.45) + cl * (-1.25 + st * 0.45);
+    aR += pl * (-1.95 + st * 0.45) + sm * (-0.45 + Math.sin(this.t * 13) * 0.18 + st * 0.3) + cl * (-1.25 + st * 0.45);
+    zL += -pl * 0.72 + sm * 0.3 - cl * (0.32 + Math.abs(Math.sin(this.t * 8)) * 0.22);
+    zR += pl * 0.72 + sm * 0.6 + cl * (0.32 + Math.abs(Math.sin(this.t * 8)) * 0.22);
     r.arms[0].rotation.set(aL, 0, zL);
     r.arms[1].rotation.set(aR, 0, zR);
     // 頭
@@ -585,19 +591,37 @@ export class Ducks {
       const d = new THREE.Mesh(geo, m);
       d.castShadow = true;
       scene.add(d);
-      this.list.push({ mesh: d, a: i * 2.1, sp: 0.08 + i * 0.02, r: 0.45 + i * 0.13 });
+      this.list.push({ mesh: d, a: i * 2.1, sp: 0.08 + i * 0.02, r: 0.45 + i * 0.13, x: P0x(pond, i), z: P0z(pond, i), h: 0 });
     }
+    this.att = null;
   }
+  /** しばらく、p のほうへ泳いでくる */
+  attract(p, dur = 9) { this.att = { p: p.clone(), t: dur }; }
   update(dt, t) {
     const P = this.pond;
-    for (const d of this.list) {
+    if (this.att) { this.att.t -= dt; if (this.att.t <= 0) this.att = null; }
+    this.list.forEach((d, i) => {
       d.a += d.sp * dt;
-      const x = P.x + Math.cos(d.a) * P.rx * d.r, z = P.z + Math.sin(d.a) * P.rz * d.r;
-      d.mesh.position.set(x, 0.1 + Math.sin(t * 2 + d.a * 5) * 0.012, z);
-      d.mesh.rotation.y = Math.atan2(-Math.sin(d.a) * P.rx, Math.cos(d.a) * P.rz);
-    }
+      let tx = P.x + Math.cos(d.a) * P.rx * d.r, tz = P.z + Math.sin(d.a) * P.rz * d.r;
+      if (this.att) {
+        // 岸の近く（池の中）へ。3羽は少しずつずらす
+        const ex = (this.att.p.x - P.x) / P.rx, ez = (this.att.p.z - P.z) / P.rz;
+        const l = Math.hypot(ex, ez) || 1;
+        const k = 0.78 - i * 0.08;
+        tx = P.x + (ex / l) * P.rx * k + (i - 1) * 0.5;
+        tz = P.z + (ez / l) * P.rz * k;
+      }
+      const ox = d.x, oz = d.z;
+      d.x = damp(d.x, tx, this.att ? 0.9 : 3, dt);
+      d.z = damp(d.z, tz, this.att ? 0.9 : 3, dt);
+      if (Math.hypot(d.x - ox, d.z - oz) > 1e-4) d.h = Math.atan2(d.x - ox, d.z - oz);
+      d.mesh.position.set(d.x, 0.1 + Math.sin(t * 2 + d.a * 5) * 0.012, d.z);
+      d.mesh.rotation.y = d.h;
+    });
   }
 }
+const P0x = (P, i) => P.x + Math.cos(i * 2.1) * P.rx * (0.45 + i * 0.13);
+const P0z = (P, i) => P.z + Math.sin(i * 2.1) * P.rz * (0.45 + i * 0.13);
 
 // ------------------------------------------------------------
 // 車（左側通行。信号・前の車・道にいる犬で止まる）
@@ -844,8 +868,9 @@ export function makeItem(kind) {
     top.position.y = 0.014;
     g.add(c, top);
   } else if (kind === 'ball') {
-    const b = new THREE.Mesh(sph(0.11, 14, 10), m(0xe8604c, 0.5));
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.108, 0.015, 6, 20), m(0xffffff, 0.5));
+    // テニスボールくらい（くわえても顔が見えるように）
+    const b = new THREE.Mesh(sph(0.075, 14, 10), m(0xe8604c, 0.5));
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.074, 0.011, 6, 20), m(0xffffff, 0.5));
     band.rotation.x = Math.PI / 2;
     g.add(b, band);
   } else if (kind === 'sunflower') {
@@ -886,6 +911,59 @@ export function makeItem(kind) {
     const t = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.2, 3), m(0xd8362f, 0.8));
     t.rotation.x = Math.PI / 2;
     g.add(t);
+  } else if (kind === 'sock') {
+    // くつした（L字、つま先とかかとに色）
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.16, 4, 8), m(0xf4f1ea, 0.9));
+    leg.rotation.x = Math.PI / 2;
+    leg.position.z = -0.06;
+    const foot = new THREE.Mesh(new THREE.CapsuleGeometry(0.036, 0.1, 4, 8), m(0xf4f1ea, 0.9));
+    foot.rotation.z = Math.PI / 2;
+    foot.position.set(0.06, 0, 0.05);
+    const toe = new THREE.Mesh(sph(0.04, 10, 8), m(0x3e6ea8, 0.9));
+    toe.position.set(0.12, 0, 0.05);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.012, 6, 14), m(0xe8604c, 0.9));
+    band.position.z = -0.15;
+    g.add(leg, foot, toe, band);
+  } else if (kind === 'coin') {
+    const c = new THREE.Mesh(cy(0.045, 0.045, 0.008, 20), m(0xd9dde2, 0.2, { metalness: 1 }));
+    c.rotation.x = Math.PI / 2;
+    c.position.y = 0.045;
+    g.add(c);
+  } else if (kind === 'omikuji') {
+    // 細く折ったおみくじ
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.01, 0.2), m(0xfbfaf4, 0.8));
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.012, 0.03), m(0xd23a2a, 0.8));
+    b.position.z = 0.03;
+    g.add(p, b);
+  } else if (kind === 'figure') {
+    // ちいさな柴犬のフィギュア
+    const o = m(0xd9843f, 0.4), w = m(0xfbf1e0, 0.4);
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.05, 4, 8), o);
+    body.rotation.x = Math.PI / 2;
+    const head = new THREE.Mesh(sph(0.032, 10, 8), o);
+    head.position.set(0, 0.03, 0.05);
+    const muz = new THREE.Mesh(sph(0.015, 8, 6), w);
+    muz.position.set(0, 0.02, 0.08);
+    const ear1 = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.025, 4), o);
+    ear1.position.set(-0.018, 0.06, 0.045);
+    const ear2 = ear1.clone(); ear2.position.x = 0.018;
+    const base = new THREE.Mesh(cy(0.045, 0.045, 0.012, 16), m(0x8fb8ff, 0.3));
+    base.position.y = -0.035;
+    g.add(body, head, muz, ear1, ear2, base);
+  } else if (kind === 'croquette') {
+    const c = new THREE.Mesh(sph(0.06, 12, 8), m(0xc98a3a, 0.8));
+    c.scale.set(1.3, 0.55, 1);
+    g.add(c);
+  } else if (kind === 'yakiimo') {
+    const c = new THREE.Mesh(sph(0.05, 10, 8), m(0x8a3a6a, 0.7));
+    c.scale.set(0.8, 0.8, 1.5);
+    const inside = new THREE.Mesh(new THREE.CircleGeometry(0.04, 12), m(0xf2c23a, 0.6, { emissive: 0xf2a23a, emissiveIntensity: 0.2 }));
+    inside.position.z = 0.074;
+    g.add(c, inside);
+  } else if (kind === 'capsule') {
+    const a = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m(0xe8604c, 0.3));
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), m(0xffffff, 0.2, { transparent: true, opacity: 0.7 }));
+    g.add(a, b);
   }
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return g;
@@ -909,6 +987,15 @@ export function makeWear(kind) {
       d.position.set((i - 2) * 0.05, -0.07 - (i % 2) * 0.04, 0.14);
       g.add(d);
     }
+  } else if (kind === 'bell') {
+    // 金のすず（赤い首輪）
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.022, 6, 20), new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.6 }));
+    collar.rotation.x = Math.PI / 2 - 0.3;
+    const bell = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 12), new THREE.MeshStandardMaterial({ color: 0xe8c04a, roughness: 0.2, metalness: 1, emissive: 0x6a4a10, emissiveIntensity: 0.3 }));
+    bell.position.set(0, -0.07, 0.13);
+    const slit = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.006, 0.01), new THREE.MeshBasicMaterial({ color: 0x3a2a10 }));
+    slit.position.set(0, -0.085, 0.172);
+    g.add(collar, bell, slit);
   } else if (kind === 'crown') {
     const cols = [0xf6d35a, 0xf28aa8, 0xffffff, 0xb58ae0, 0xf2735a];
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.018, 6, 20), new THREE.MeshStandardMaterial({ color: 0x5f9a55, roughness: 0.8 }));

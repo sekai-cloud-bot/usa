@@ -8,8 +8,9 @@ export const pickR = (arr) => arr[Math.floor(rnd() * arr.length)];
 
 // 灯りのマテリアル
 export const LM = {
-  window: LIGHTS.make(0xffc98a, 0.0, 1.35, 0x8fa9b8),
-  windowWarm: LIGHTS.make(0xffb870, 0.0, 1.6, 0x9ab0bd),
+  // ガラスはつるつる（空が映る）。夕方は部屋の灯りがともる
+  window: LIGHTS.make(0xffc98a, 0.0, 1.35, 0x7d97a8, { roughness: 0.14, metalness: 0.15 }),
+  windowWarm: LIGHTS.make(0xffb870, 0.0, 1.6, 0x8aa2b2, { roughness: 0.18, metalness: 0.12 }),
   lamp: LIGHTS.make(0xffd9a0, 0.05, 3.2, 0xfff3de),
   lantern: LIGHTS.make(0xff7a4a, 0.25, 3.0, 0xff9a70),
   vend: LIGHTS.make(0xeaf6ff, 0.55, 1.7, 0xffffff),
