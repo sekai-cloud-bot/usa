@@ -7,6 +7,7 @@ import { EventDirector, EVENTS, FRIEND_IDS, KINDS } from './events.js';
 import { installHappenings } from './happen.js';
 import { Party } from './party.js';
 import { Treasures } from './treasure.js';
+import { pickTitle, TITLES } from './titles.js';
 import { audio } from '../audio.js';
 import { clamp, damp, dampAngle, angleDiff, lerp, smooth, disposeObject } from '../util.js';
 import { ROOM, BED } from '../room.js';
@@ -1271,8 +1272,14 @@ export class Game {
       name: this.dogName, arrive, late: !!this.flags.late, gift: this.giftId, events: done,
       friends: done.filter((id) => FRIEND_IDS.includes(id)), memories: this.ev.memories.slice(),
       photo: this.photo, totalEvents: s.events.length, totalGifts: s.gifts.length, clears: s.clears, fortune: this.fortune || null,
-      party: this.party.names(),
+      party: this.party.names(), wet: !!this.flags.wet, darumaPerfect: !!this.flags.darumaPerfect,
+      dug: this.treasure.dug, treasureNew: this.treasure.found.slice(), treasureTotal: (s.treasures || []).length,
+      totalEventCount: EVENTS.length,
     };
+    // きょうの称号
+    const tp = pickTitle(this.result, s.titles || []);
+    s.titles = tp.earned;
+    this.result.title = { id: tp.title.id, name: tp.title.name, sub: tp.title.sub, isNew: tp.isNew, more: tp.more, count: tp.earned.length, total: TITLES.length };
     if (this.onFinish) this.onFinish(this.result);
   }
 }

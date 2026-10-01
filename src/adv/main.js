@@ -12,6 +12,7 @@ import { UI } from './ui.js';
 import { Game, GIFTS, EVENTS, KINDS } from './game.js';
 import { WEAR } from './actors.js';
 import { TREASURES } from './treasure.js';
+import { TITLES } from './titles.js';
 import { AREA_NAMES } from './events.js';
 import { loadSave, save, getSave } from './save.js';
 import { shareDiary, fmtHour } from './share.js';
@@ -237,6 +238,7 @@ function refreshTitle() {
   const s = getSave();
   const lines = [];
   if (s.clears) lines.push(`おむかえ ${s.clears}回 ・ できごと ${(s.events || []).length}/${EVENTS.length} ・ おみやげ ${s.gifts.length}/${Object.keys(GIFTS).length}`);
+  if (s.clears || (s.treasures || []).length) lines.push(`たからばこ ${(s.treasures || []).length}/${TREASURES.length} ・ 称号 ${(s.titles || []).length}/${TITLES.length} ・ きせかえ ${(s.wear || []).filter((k) => WEAR[k]).length}/${Object.keys(WEAR).length}`);
   if (s.best) lines.push(`いちばん早い到着 ${fmtHour(s.best)}`);
   $('title-stats').textContent = '';
   lines.forEach((l) => { const d = document.createElement('div'); d.textContent = l; $('title-stats').appendChild(d); });
@@ -580,17 +582,30 @@ function showResult(r) {
     al.appendChild(f);
   });
   al.style.display = shown.length ? '' : 'none';
+  // きょうの称号
+  const T = r.title;
+  $('r-badge').style.display = T ? '' : 'none';
+  if (T) {
+    $('rb-name').textContent = T.name;
+    $('rb-new').style.display = T.isNew ? '' : 'none';
+    $('rb-sub').textContent = `${T.sub}${T.more ? `（ほかにも 新しい称号が ${T.more}こ）` : ''} ・ 称号 ${T.count}/${T.total}`;
+  }
   const st = $('r-stamps');
   st.innerHTML = '';
-  if (r.fortune) { const s = document.createElement('div'); s.className = 'r-fortune'; s.textContent = `おみくじ 大吉：${r.fortune}`; st.appendChild(s); }
+  const line = (cls, text) => { const d = document.createElement('div'); d.className = cls; d.textContent = text; st.appendChild(d); };
+  if (r.party && r.party.length) line('r-party', `いっしょに 駅へ：${r.party.join('・')}`);
+  if (r.dug) line('r-treasure', r.treasureNew.length ? `おたから ＋${r.treasureNew.length}こ（たからばこ ${r.treasureTotal} / ${TREASURES.length}）` : `ほった所 ${r.dug}か所（ぜんぶ おやつだった）`);
+  if (r.fortune) line('r-fortune', `おみくじ 大吉：${r.fortune}`);
   for (const e of EVENTS) if (r.events.includes(e.id) && e.kind === 'friend') { const s = document.createElement('span'); s.className = 'stamp friend'; s.textContent = e.title; st.appendChild(s); }
   const s = getSave();
   const missE = EVENTS.filter((e) => !(s.events || []).includes(e.id));
   const missG = Object.keys(GIFTS).length - s.gifts.length;
+  const missT = TREASURES.length - (s.treasures || []).length;
   const tips = [];
   if (missE.length) tips.push(`まだ見ていない できごと：${missE.length}こ（${AREA_NAMES[missE[0].area]}に なにかあるかも）`);
   if (missG > 0) tips.push(`おみやげで、あの人の反応がかわる（あと${missG}種類）`);
-  $('r-next').textContent = tips.join(' ／ ') || 'ぜんぶの できごとと おみやげを見つけました！';
+  if (missT > 0) tips.push(`たからばこ あと${missT}こ（くんくん で さがそう）`);
+  $('r-next').textContent = tips.join(' ／ ') || 'ぜんぶの できごと・おみやげ・おたからを見つけました！';
   show('screen-result');
   ui.hud(false);
 }

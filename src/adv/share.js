@@ -89,6 +89,23 @@ export async function makeDiaryCanvas(r) {
   ctx.fillStyle = '#fff';
   ctx.font = `800 32px ${FONT}`;
   ctx.fillText(`${fmtHour(r.arrive)}  ひだまり駅`, px + pw - 24, py + ph - 32);
+  // きょうの称号（写真の左下に、札のように）
+  if (r.title) {
+    ctx.font = `500 34px ${DISPLAY}`;
+    const label = r.title.name;
+    const tw = Math.min(520, ctx.measureText(label).width);
+    const bx = px + 22, by = py + ph - 86, bw = tw + 120, bh = 60;
+    rr(ctx, bx, by, bw, bh, 30);
+    ctx.fillStyle = 'rgba(255, 243, 214, .94)';
+    ctx.fill();
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#c07a2a';
+    ctx.font = `800 20px ${FONT}`;
+    ctx.fillText('称号', bx + 26, by + bh / 2 + 2);
+    ctx.fillStyle = '#6a3e1c';
+    fitText(ctx, label, 520, 34, 500, DISPLAY);
+    ctx.fillText(label, bx + 88, by + bh / 2 + 2);
+  }
 
   // 思い出（3枚）
   const mem = (r.memories || []).filter((m) => m.url);
@@ -162,7 +179,8 @@ export async function makeDiaryCanvas(r) {
   }
   ctx.fillStyle = '#b0603a';
   ctx.textAlign = 'center';
-  const foot = r.fortune ? `おみくじ 大吉：${r.fortune}` : `ともだち ${r.friends.length}人と 出会った夕方`;
+  const party = r.party || [];
+  const foot = party.length ? `${party.join('・')}と いっしょに、おむかえ` : r.fortune ? `おみくじ 大吉：${r.fortune}` : `ともだち ${r.friends.length}人と 出会った夕方`;
   fitText(ctx, foot, 900, 26, 800, FONT);
   ctx.fillText(foot, W / 2, pick.length ? 1225 : 1210);
   ctx.fillStyle = '#b89a86';
@@ -172,7 +190,10 @@ export async function makeDiaryCanvas(r) {
 }
 
 export function diaryText(r) {
-  return `${r.name}が ひとりで駅までおむかえに来てくれました。おみやげは「${GIFTS[r.gift].label}」、できごと${r.events.length}こ。 #駅までおむかえ`;
+  const party = r.party || [];
+  const who = party.length ? `${r.name}が ${party.join('・')}と いっしょに` : `${r.name}が ひとりで`;
+  const title = r.title ? ` きょうの称号は「${r.title.name}」。` : '';
+  return `${who}駅までおむかえに来てくれました。おみやげは「${GIFTS[r.gift].label}」、できごと${r.events.length}こ。${title} #駅までおむかえ`;
 }
 
 export async function shareDiary(r, mode = 'share') {

@@ -363,7 +363,8 @@ function daruma(g) {
       caught = 0;
       firstPlay = true;
       g.say(oni, 'いくよー！', 1.2);
-      g.ui.objective('オニに タッチ！「…ころんだ」で ピタッと止まる');
+      g.ui.objective('オニに タッチしよう！');
+      g.ui.toast('「…ころんだ！」で ピタッと止まる。うごいたら スタートへ もどる', 'star');
       phase = 'rest';
       ph = 0.4;
     }
