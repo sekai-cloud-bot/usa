@@ -32,6 +32,13 @@ export function riverY(x, z) {
   return 0;
 }
 
+/** 見た目の地面の高さ（河川敷は、ゆるく波うっている。人や物を置く時に） */
+export function riverGroundY(x, z) {
+  const R = RIVER;
+  const flat = (z < R.flat && z > R.beach) || (z < R.farFlat && z > R.farSlope);
+  return riverY(x, z) + (flat ? Math.sin(x * 0.21) * Math.cos(z * 0.33) * 0.06 : 0);
+}
+
 /** 起伏のある地面（格子）。zs は南から北への z の刻み */
 function terrain(g, x0, x1, dx, zs, fn, material, colorFn, uvScale = 5, cast = false) {
   const cols = Math.ceil((x1 - x0) / dx);
@@ -142,7 +149,7 @@ export function buildRiver(ctx) {
   // 谷の地面（草の斜面・河川敷・川底）
   const zs = [R.top, R.slope, -115, -116, -117, -118, -119, R.flat, -123, -126, -129, R.beach, -133.5, R.shallow, R.deep, -139, -142, R.deep2, R.farBeach, -147.5, R.farFlat, -152.5, R.farSlope, -157, -158, -159, -160, -161, R.farTop, -166];
   const grassM = gmat(TEX.grass, 0xffffff, 1, { vertexColors: true });
-  terrain(g, -140, 280, 5, zs, (x, z) => riverY(x, z) + ((z < R.flat && z > R.beach) || (z < R.farFlat && z > R.farSlope) ? Math.sin(x * 0.21) * Math.cos(z * 0.33) * 0.06 : 0), grassM, (x, z, y, c) => {
+  terrain(g, -140, 280, 5, zs, riverGroundY, grassM, (x, z, y, c) => {
     if (z < R.beach && z > R.farFlat) {
       // 水ぎわ：ぬれた土と小石
       const k = clamp((y - R.bedY) / (R.flatY - R.bedY), 0, 1);
@@ -172,7 +179,8 @@ export function buildRiver(ctx) {
   col.addBox(R.x0 - 1, R.x0, -166, R.walkS, -6, 12, 'thin');
   col.addBox(R.x1, R.x1 + 1, -166, R.walkS, -6, 12, 'thin');
   // 草（斜面と河川敷）と葦
-  grassField(g, [[R.x0, R.slope - 0.3, R.x1, R.flat], [R.x0, R.flat, R.x1, R.beach + 0.5]], 16800, (x, z) => x > 12 && x < 36 && z < -121 && z > -131, 71, 0.01, riverY);
+  // 野球のグラウンドと、だるまさんが ころんだ のスタートの線（ふまれて草がない）は あける
+  grassField(g, [[R.x0, R.slope - 0.3, R.x1, R.flat], [R.x0, R.flat, R.x1, R.beach + 0.5]], 16800, (x, z) => (x > 12 && x < 36 && z < -121 && z > -131) || (Math.abs(x - 53.5) < 0.55 && z < -123.2 && z > -131.4), 71, 0.01, riverY);
   reeds(g, [[R.x0, R.beach + 0.8, R.x1, R.shallow + 0.4], [R.x0, R.farBeach - 0.3, R.x1, R.farFlat - 0.2]], 2600, riverY, 5);
 
   // 土手の上の遊歩道（河川敷は一面の草）
@@ -377,6 +385,23 @@ export function buildRiver(ctx) {
     for (let x = -120; x < 270; x += 22) cityBlock(far, x + r() * 6, -192 - r() * 8, 14, 12, 12 + r() * 16, [0xe9dccb, 0xd8d0c4, 0xf0e6d6, 0xc9d0d4][Math.floor(r() * 4)]);
     // 向こう岸の河川敷にも少し葦と木
     for (let x = -100; x < 260; x += 23) bush(far, x, -151 - r() * 3, 1 + r() * 0.5, 600 + x, false, R.flatY);
+  }
+
+  // 河川敷の一本木と、地面にかいたスタートの線（だるまさんが ころんだ）
+  {
+    const tx = 40, tz = -127.5;
+    const t = tree(g, tx, tz, 'keyaki', 4242, 1.15);
+    t.group.position.y = riverGroundY(tx, tz);
+    col.addCircle(tx, tz, 0.32, R.flatY, R.flatY + 5, 'trunk');
+    const chalk = mat(0xf4f1ea, { rough: 0.9 });
+    const lx = 53.5;
+    for (let z = -123.6; z > -131; z -= 0.5) {
+      const zm = z - 0.25;
+      const seg = box(g, 0.09, 0.012, 0.46, lx + Math.sin(z * 3.1) * 0.03, riverGroundY(lx, zm) + 0.004, zm, chalk, { cast: false });
+      seg.rotation.y = Math.sin(z * 1.7) * 0.06;
+    }
+    anchors.darumaTree = new THREE.Vector3(tx, R.flatY, tz);
+    anchors.darumaLine = lx;
   }
 
   // 見える所の目印

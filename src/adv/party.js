@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { makePigeon } from './actors.js';
+import { makePigeon, waddle } from './actors.js';
 import { RIVER } from './town2.js';
 import { audio } from '../audio.js';
 import { clamp, damp, dampAngle, lerp } from '../util.js';
@@ -95,9 +95,11 @@ export class Party {
     const k = b === a ? 0 : clamp((s - a.s) / Math.max(1e-6, b.s - a.s), 0, 1);
     return out.set(lerp(a.x, b.x, k), lerp(a.y, b.y, k), lerp(a.z, b.z, k));
   }
-  nearestS(pos) {
+  /** pos にいちばん近い道の点（fromS より先だけを さがすこともできる） */
+  nearestS(pos, fromS = -Infinity) {
     let best = Infinity, bs = this.total;
     for (const q of this.trail) {
+      if (q.s < fromS) continue;
       const d = Math.hypot(q.x - pos.x, q.z - pos.z) + Math.abs(q.y - pos.y) * 0.5;
       if (d < best) { best = d; bs = q.s; }
     }
@@ -176,7 +178,8 @@ export class Party {
       if (m.s < t[0].s) m.s = t[0].s;
       this.cutLoops(m, sT);
       const lag = sT - m.s;
-      const want = lag > 0.05 ? Math.min(m.maxSpeed, 0.4 + lag * 2.4) : 0;
+      // hold：その場で待つ（はぐれた ひな など）
+      const want = lag > 0.05 && !m.hold ? Math.min(m.maxSpeed, 0.4 + lag * 2.4) : 0;
       m.v = damp(m.v, want, want > m.v ? 5 : 12, dt);
       let s2 = Math.min(sT, m.s + m.v * dt);
       if (s2 > m.s) {
@@ -322,6 +325,40 @@ export class CatFollower {
       const c = this.cat, g = this.g;
       g.run(function* () { yield 0.4; audio.play('meow', 1.15); g.sayAt(c.pos.clone().add(_a.set(0, 0.55, 0)), 'にゃ', 0.9); }());
     }
+  }
+}
+
+/** カルガモのひな（池まで つれていく）。足が おそいので、走ると はぐれる */
+export class ChickFollower {
+  constructor(g, chick, { id = 'chick', name = 'ひな', gap = 0.8, order = 1 } = {}) {
+    Object.assign(this, { g, chick, id, name, gap, order });
+    this.maxSpeed = 3.4;
+    this.minGap = 0.6;
+    this.radius = 0.2;
+    this.pos = chick.root.position;
+    this.s = 0;
+    this.v = 0;
+    this.t = 0;
+    this.heading = 0;
+    this._w = new THREE.Vector3();
+  }
+  place(p) { this.pos.copy(p); }
+  drive(dt, target, o) {
+    this.t += dt;
+    const c = this.chick;
+    const w = approach(this.pos, target, o.speed || this.maxSpeed, dt, this._w);
+    const vx = (w.x - this.pos.x) / dt, vz = (w.z - this.pos.z) / dt, sp = Math.hypot(vx, vz);
+    this.pos.copy(w);
+    if (sp > 0.1) this.heading = dampAngle(this.heading, Math.atan2(vx, vz), 12, dt);
+    else if (o.face !== undefined) this.heading = dampAngle(this.heading, o.face, 5, dt);
+    else this.heading = dampAngle(this.heading, Math.atan2(this.g.player.pos.x - this.pos.x, this.g.player.pos.z - this.pos.z), 3, dt);
+    c.root.rotation.y = this.heading;
+    waddle(c, this.t, Math.min(1, sp / 2));
+  }
+  react(kind) {
+    if (kind !== 'bark') return;
+    const g = this.g, p = this.pos;
+    g.run(function* () { yield 0.3; audio.play('peep', 1.2); g.sayAt(p.clone().add(_a.set(0, 0.3, 0)), 'ピヨ！', 0.8); }());
   }
 }
 

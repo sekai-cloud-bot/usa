@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RIVER } from './town2.js';
+import { riverGroundY } from './town2.js';
 import { audio } from '../audio.js';
 import { clamp, puffGeometry, smooth } from '../util.js';
 
@@ -109,12 +109,6 @@ const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _e = new THREE.Euler();
 
-/** 河川敷の地面は、見た目だけ ゆるく波うっている（town2.js の terrain と同じ式） */
-function visualY(x, z, y) {
-  if (z < RIVER.flat && z > RIVER.beach) return y + Math.sin(x * 0.21) * Math.cos(z * 0.33) * 0.06;
-  return y;
-}
-
 export class Treasures {
   constructor(game) {
     this.g = game;
@@ -122,7 +116,9 @@ export class Treasures {
     this.spots = TREASURES.map((t, i) => {
       const y = col.groundAt(t.x, t.z, 0.3, (t.area === 'shrine' ? 7.5 : t.area === 'river' ? -2.6 : t.area === 'plaza' ? 0.6 : 0) + 0.3, 0.35);
       const ground = t.ground || (t.area === 'shrine' ? 'gravel' : t.area === 'river' ? (t.z < -131 ? 'pebble' : 'soil') : 'soil');
-      return { t, i, pos: new THREE.Vector3(t.x, y, t.z), vy: t.vy ?? visualY(t.x, t.z, y), ground, state: 'hidden', k: 0, wispT: Math.random() };
+      // 河川敷の地面は、見た目だけ ゆるく波うっている
+      const vy = t.vy ?? (t.area === 'river' ? riverGroundY(t.x, t.z) : y);
+      return { t, i, pos: new THREE.Vector3(t.x, y, t.z), vy, ground, state: 'hidden', k: 0, wispT: Math.random() };
     });
     // もりあがった土（あやしい所）と、ほったあとの穴：まとめて2命令
     const n = this.spots.length;

@@ -145,6 +145,17 @@ export class UI {
   }
   clockFF(on) { document.body.classList.toggle('ff', on); }
 
+  /** だるまさんが ころんだ：言い終わった音まで明るく。look: ふり向いた、caught: つかまった */
+  daruma(s) {
+    const el = $('daruma');
+    if (!s) { el.classList.remove('show', 'look', 'caught'); return; }
+    el.classList.add('show');
+    el.classList.toggle('look', !!s.look);
+    el.classList.toggle('caught', !!s.caught);
+    const spans = el.querySelectorAll('span');
+    spans.forEach((sp, i) => sp.classList.toggle('on', i < s.n));
+  }
+
   action(label) {
     if (label === this.actionText) return;
     this.actionText = label;

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Cat, Crow, Pigeons, Ducks, makeItem } from './actors.js';
 import { DogFollower, CatFollower, PigeonRider } from './party.js';
+import { installMore } from './happen2.js';
 import { Dog } from '../dog.js';
 import { typeParams } from '../dogModel.js';
 import { audio } from '../audio.js';
@@ -28,6 +29,7 @@ export function installHappenings(g) {
   road(g);
   plaza(g);
   chime(g);
+  installMore(g);
 }
 
 /** 静かな物（屋台・トラック）をまとめて1つのメッシュに */
@@ -904,6 +906,7 @@ function park(g) {
 
   // 池のカモ
   const ducks = new Ducks(scene, A.pondR);
+  g.ducks = ducks;
   const P = A.pondR;
   g.ev.pos('ducks', () => _a.set(P.x, 1.4, P.z));
   g.on('update', (dt) => ducks.update(dt, g.t));

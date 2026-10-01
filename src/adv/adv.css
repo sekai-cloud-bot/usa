@@ -85,6 +85,22 @@ body.touch .prompt, body.touch .keys { display: none; }
 .toast.show { transform: none; opacity: 1; }
 .toast i { font-style: normal; color: var(--accent); }
 
+/* だるまさんが ころんだ：言った音が明るくなる。ふり向いたら赤く（動くと つかまる） */
+.daruma { position: absolute; left: 50%; top: calc(66px + var(--safe-t)); transform: translate(-50%, -6px); display: flex; align-items: center; gap: 2px; padding: 7px 16px 8px; border-radius: 999px; background: rgba(40, 26, 18, .58); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); opacity: 0; transition: opacity .3s, transform .3s, background .15s; box-shadow: var(--shadow); }
+.daruma.show { opacity: 1; transform: translate(-50%, 0); }
+.daruma span { font-family: var(--display); font-size: 22px; color: rgba(255, 248, 236, .32); transition: color .08s, transform .08s; display: inline-block; }
+.daruma span:nth-child(6) { margin-right: 8px; }
+.daruma span.on { color: #fff8ec; transform: translateY(-2px); text-shadow: 0 0 10px rgba(255, 220, 160, .8); }
+.daruma b { font-size: 13px; font-weight: 800; color: #fff; margin-left: 0; max-width: 0; overflow: hidden; white-space: nowrap; transition: max-width .2s, margin .2s; }
+.daruma.look { background: rgba(196, 52, 46, .82); }
+.daruma.look span { color: #fff; text-shadow: none; }
+.daruma.look b { max-width: 90px; margin-left: 10px; }
+.daruma.look b::after { content: 'みてる！'; }
+.daruma.caught b::after { content: 'うごいた！'; }
+body.daruma-look .hud::before { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 110px rgba(220, 60, 50, .35); pointer-events: none; }
+@media (max-width: 720px) { .daruma { top: calc(112px + var(--safe-t)); } .daruma span { font-size: 18px; } }
+@media (max-height: 460px) { .daruma { top: calc(56px + var(--safe-t)); } }
+
 /* くんくん中は画面の縁が琥珀色に */
 body.sniffing .hud::after { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 120px rgba(246, 200, 106, .35); pointer-events: none; }
 

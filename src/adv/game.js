@@ -502,7 +502,7 @@ export class Game {
     if (this.autoRun) {
       mv.set(this.autoRun.x - p.pos.x, 0, this.autoRun.z - p.pos.z);
       if (mv.length() > 1) mv.normalize();
-      p.run = true;
+      p.run = !this.autoRun.walk;
     }
     if (d.poseTarget === 'sit' && mv.lengthSq() > 0.01) this.sitT = 0;
     p.update(dt, mv);
@@ -844,6 +844,15 @@ export class Game {
       const z = glow.position.z + (Math.random() - 0.5) * 0.08;
       this.fx.spawn({ pos: V(ROOM.maxX - 0.05, 0.3 + Math.random() * 1.6, z), vel: V(-0.35 - Math.random() * 0.3, (Math.random() - 0.3) * 0.12, (Math.random() - 0.5) * 0.25), color: 0xffe2a8, size: 0.07 + Math.random() * 0.05, life: 2 + Math.random(), drag: 0.25, shape: Math.random() < 0.5 ? 0 : 3, alpha: 0.8 });
     }
+  }
+
+  /** 寄り道が終わったら、いまの目標に もどす */
+  restoreObjective() {
+    const F = this.flags;
+    if (F.arrival) return;
+    if (F.trainArrived) this.ui.objective('改札へ いそごう！');
+    else if (this.area === 'plaza') this.ui.objective(this.hour < 17.9 ? '改札の前で まとう（おすわり）' : '改札へ いそごう！');
+    else this.ui.objective('においをたどって 駅へ');
   }
 
   onArea(id) {

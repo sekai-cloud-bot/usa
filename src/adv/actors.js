@@ -622,11 +622,66 @@ export class Pigeons {
 }
 
 // ------------------------------------------------------------
-// カモ（池をゆっくり回る）
+// カルガモのひな（1羽）。原点は足もと、前は +Z。body はよちよち揺れる
+// ------------------------------------------------------------
+let chickMat = null;
+export function makeChick() {
+  const m = chickMat || (chickMat = softMaterial({ rough: 0.8, rim: 0.55, self: 0.08 }));
+  const root = new THREE.Group();
+  // 本物より少し大きめ（遠くからでも見えるように）
+  root.scale.setScalar(1.45);
+  const body = new THREE.Group();
+  root.add(body);
+  const mesh = new THREE.Mesh(mergeParts([
+    { geo: sph(0.06, 12, 10), matrix: M4(0, 0.062, -0.005, 0, 0, 0, 0.85, 0.75, 1.1), color: 0x6b5a3a },
+    { geo: sph(0.05, 10, 8), matrix: M4(0, 0.05, 0.018, 0, 0, 0, 0.8, 0.62, 1.0), color: 0xe6cf8a },
+    { geo: sph(0.041, 12, 10), matrix: M4(0, 0.118, 0.05), color: 0xead48f },
+    { geo: new THREE.SphereGeometry(0.043, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), matrix: M4(0, 0.122, 0.044, -0.35), color: 0x5a4a32 },
+    { geo: new THREE.BoxGeometry(0.008, 0.01, 0.05), matrix: M4(-0.033, 0.12, 0.06, 0, -0.35), color: 0x4a3c28 },
+    { geo: new THREE.BoxGeometry(0.008, 0.01, 0.05), matrix: M4(0.033, 0.12, 0.06, 0, 0.35), color: 0x4a3c28 },
+    { geo: rb(0.03, 0.012, 0.034, 0.005), matrix: M4(0, 0.108, 0.097), color: 0x3a3028 },
+    { geo: cy(0.01, 0.016, 0.03, 6), matrix: M4(0, 0.075, -0.072, -1.15), color: 0x5a4a32 },
+    { geo: sph(0.02, 8, 6), matrix: M4(-0.05, 0.07, -0.005, 0, 0, 0, 0.5, 0.8, 1.3), color: 0x5e4e32 },
+    { geo: sph(0.02, 8, 6), matrix: M4(0.05, 0.07, -0.005, 0, 0, 0, 0.5, 0.8, 1.3), color: 0x5e4e32 },
+  ]), m);
+  mesh.castShadow = true;
+  body.add(mesh);
+  const eyeM = new THREE.MeshBasicMaterial({ color: 0x15100c });
+  const hiM = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  for (const s of [-1, 1]) {
+    const e = new THREE.Mesh(sph(0.0085, 8, 6), eyeM);
+    e.position.set(s * 0.029, 0.124, 0.079);
+    const h = new THREE.Mesh(sph(0.003, 5, 4), hiM);
+    h.position.set(s * 0.029 + 0.003, 0.127, 0.087);
+    body.add(e, h);
+  }
+  const footM = new THREE.MeshStandardMaterial({ color: 0x4a4440, roughness: 0.7 });
+  const feet = [-1, 1].map((s) => {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.006, 0.032), footM);
+    f.position.set(s * 0.022, 0.003, 0.012);
+    root.add(f);
+    return f;
+  });
+  return { root, body, feet };
+}
+/** よちよち歩き（k: 歩く速さ 0..1、swim: 水の上） */
+export function waddle(c, t, k, swim = false) {
+  c.body.rotation.z = Math.sin(t * 15) * 0.2 * k;
+  c.body.position.y = swim ? -0.035 : Math.abs(Math.sin(t * 15)) * 0.012 * k;
+  c.feet[0].visible = c.feet[1].visible = !swim;
+  c.feet[0].position.z = 0.012 + Math.sin(t * 15) * 0.02 * k;
+  c.feet[1].position.z = 0.012 - Math.sin(t * 15) * 0.02 * k;
+  // 止まっていると、ときどき つんつん
+  c.body.rotation.x = k < 0.1 && Math.sin(t * 2.3) > 0.85 ? 0.35 : 0;
+}
+
+// ------------------------------------------------------------
+// カモ（池をゆっくり回る）。お母さん（2羽め）のうしろに、ひなが一列
 // ------------------------------------------------------------
 export class Ducks {
   constructor(scene, pond) {
     this.pond = pond;
+    this.scene = scene;
     this.list = [];
     const m = softMaterial({ rough: 0.6, rim: 0.45, self: 0.05 });
     for (let i = 0; i < 3; i++) {
@@ -643,6 +698,17 @@ export class Ducks {
       this.list.push({ mesh: d, a: i * 2.1, sp: 0.08 + i * 0.02, r: 0.45 + i * 0.13, x: P0x(pond, i), z: P0z(pond, i), h: 0 });
     }
     this.att = null;
+    this.mother = this.list[1];
+    this.chicks = [];
+    for (let i = 0; i < 2; i++) {
+      const c = makeChick();
+      scene.add(c.root);
+      this.addChick(c, this.mother.x, this.mother.z);
+    }
+  }
+  /** ひなを、お母さんの列のうしろに */
+  addChick(c, x, z) {
+    this.chicks.push({ c, x, z, h: this.mother.h, t: Math.random() * 5 });
   }
   /** しばらく、p のほうへ泳いでくる */
   attract(p, dur = 9) { this.att = { p: p.clone(), t: dur }; }
@@ -667,6 +733,21 @@ export class Ducks {
       d.mesh.position.set(d.x, 0.1 + Math.sin(t * 2 + d.a * 5) * 0.012, d.z);
       d.mesh.rotation.y = d.h;
     });
+    // ひなは、お母さんのうしろを一列で
+    let px = this.mother.x, pz = this.mother.z, ph = this.mother.h, gap = 0.42;
+    for (const k of this.chicks) {
+      k.t += dt;
+      const tx = px - Math.sin(ph) * gap, tz = pz - Math.cos(ph) * gap;
+      const ox = k.x, oz = k.z;
+      k.x = damp(k.x, tx, 2.2, dt);
+      k.z = damp(k.z, tz, 2.2, dt);
+      const sp = Math.hypot(k.x - ox, k.z - oz) / Math.max(dt, 1e-4);
+      if (sp > 0.02) k.h = dampAngle(k.h, Math.atan2(k.x - ox, k.z - oz), 6, dt);
+      k.c.root.position.set(k.x, 0.1 + Math.sin(t * 2.6 + k.t) * 0.008, k.z);
+      k.c.root.rotation.y = k.h;
+      waddle(k.c, k.t, Math.min(1, sp * 2), true);
+      px = k.x; pz = k.z; ph = k.h; gap = 0.3;
+    }
   }
 }
 const P0x = (P, i) => P.x + Math.cos(i * 2.1) * P.rx * (0.45 + i * 0.13);

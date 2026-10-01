@@ -49,7 +49,7 @@ const TUNES = {
 const PENTA = [0, 2, 4, 7, 9];
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 // 生き物の声などは、短い間に何度も鳴らすと重なってうるさいので間引く（秒）
-const MIN_GAP = { meow: 0.7, caw: 0.9, coo: 0.4, quack: 0.5, chirp: 0.25, flap: 0.3, horn: 0.6 };
+const MIN_GAP = { meow: 0.7, caw: 0.9, coo: 0.4, quack: 0.5, chirp: 0.25, flap: 0.3, horn: 0.6, peep: 0.18 };
 
 export class Audio {
   constructor() {
@@ -338,6 +338,19 @@ export class Audio {
         for (let i = 0; i < 3; i++) this._osc('sine', 3200 + r() * 900, 2600 + r() * 600, 0.07, 0.03 * p, i * 0.11);
         break;
       case 'quack': this._osc('sawtooth', 320 * p, 260 * p, 0.14, 0.07); this._noise('bandpass', 900, 3, 0.12, 0.08); break;
+      case 'mora':
+        // 「だるまさんが ころんだ」の1音（子どもの声）。p は音の高さ（半音）
+        this._voice('voice', mtof(76 + p), this.ctx.currentTime + 0.01, 0.12, 0.085, this.sfx);
+        break;
+      case 'buzz':
+        // うごいた〜！：ぶっぶー
+        this._osc('square', 330, 320, 0.12, 0.05);
+        this._osc('square', 247, 240, 0.22, 0.05, 0.16);
+        break;
+      case 'peep':
+        // ひなの声：ピヨピヨ
+        for (let i = 0; i < 2; i++) this._osc('sine', 2500 * p, 3300 * p, 0.07, 0.07, i * 0.12);
+        break;
       // ---- できごと ----
       case 'suzu':
         // 神社の鈴：ガラガラと鳴る高い金属の粒
