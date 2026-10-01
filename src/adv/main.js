@@ -10,6 +10,8 @@ import { GRASS } from './nature.js';
 import { FUR } from './look.js';
 import { UI } from './ui.js';
 import { Game, GIFTS, EVENTS, KINDS } from './game.js';
+import { WEAR } from './actors.js';
+import { TREASURES } from './treasure.js';
 import { AREA_NAMES } from './events.js';
 import { loadSave, save, getSave } from './save.js';
 import { shareDiary, fmtHour } from './share.js';
@@ -66,6 +68,7 @@ player.place(BED.x, 0.05, BED.z, -2.2);
 player.dog.setPose('lie');
 player.dog.setExpr('sleep');
 const game = new Game({ scene, camera, renderer, day, town, player, cam, ctl, post, ui, save: data });
+game.applyWear();
 
 function applyShadowQuality() {
   const size = [1024, 2048, 4096][level];
@@ -326,9 +329,32 @@ function buildCustom() {
   }
   $('in-fluff').value = Math.round(dogParams.fluff * 100);
   $('in-name').value = dogParams.name || '';
+  // きせかえ：もらった物は つけたり はずしたり（場所ごとに1つ）。まだの物は もらい方のヒント
+  const ww = $('opt-wear');
+  ww.innerHTML = '';
+  const have = data.wear || [];
+  for (const [k, w] of Object.entries(WEAR)) {
+    const c = document.createElement('button');
+    const got = have.includes(k);
+    const on = got && game.wearChoice(w.slot) === k;
+    c.className = 'chip' + (on ? ' on' : '') + (got ? '' : ' locked');
+    c.textContent = got ? `${w.icon} ${w.label}` : `？ ${w.how}`;
+    c.disabled = !got;
+    c.onclick = () => {
+      data.wearOn = data.wearOn || {};
+      data.wearOn[w.slot] = on ? null : k;
+      save();
+      audio.play('ui');
+      applyDog();
+      buildCustom();
+    };
+    ww.appendChild(c);
+  }
+  $('wear-count').textContent = `${have.filter((k) => WEAR[k]).length} / ${Object.keys(WEAR).length}`;
 }
 function applyDog() {
   player.setParams(dogParams);
+  game.applyWear();
   player.place(BED.x - 0.2, 0, BED.z + 0.5, -0.9);
   player.dog.setPose('sit');
   player.dog.setExpr('happy');
@@ -438,6 +464,12 @@ function drawMap() {
       c.fillText(seen.has(e.id) ? '・' : '?', x, y + 4);
     }
   }
+  // この回で見つけた「あやしいにおい」（ほった所は ✓）
+  for (const m of game.treasure.marks()) {
+    const x = X(m.x), y = Y(m.z);
+    c.fillStyle = m.dug ? '#a9805a' : '#9ccf5a';
+    c.beginPath(); c.moveTo(x, y - 5); c.lineTo(x + 5, y); c.lineTo(x, y + 5); c.lineTo(x - 5, y); c.closePath(); c.fill();
+  }
   // いまいる所
   const p = player.pos;
   c.save();
@@ -464,6 +496,22 @@ function drawMap() {
     box.appendChild(d);
   }
   $('pm-count').textContent = `できごと ${game.ev.done.size} / ${EVENTS.length}`;
+  // いっしょにいる なかま
+  const names = game.party.names();
+  $('pm-party').textContent = names.length ? `いっしょに 駅へ：${names.join('・')}` : '';
+  // たからばこ（見つけた物だけ絵が出る）
+  const have = new Set(getSave().treasures || []);
+  const grid = $('tb-grid');
+  grid.textContent = '';
+  for (const t of TREASURES) {
+    const d = document.createElement('div');
+    const got = have.has(t.id);
+    d.className = 'tb-cell' + (got ? '' : ' empty');
+    d.textContent = got ? t.icon : '？';
+    d.title = got ? t.name : AREA_NAMES[t.area];
+    grid.appendChild(d);
+  }
+  $('tb-count').textContent = `${have.size} / ${TREASURES.length}`;
 }
 
 function pause(on) {

@@ -1019,8 +1019,29 @@ export function makeItem(kind) {
   return g;
 }
 
-/** 犬の首まわり・頭にのせる きせかえ */
-export function makeWear(kind) {
+/**
+ * きせかえ。slot: 身につける場所（同じ場所には1つだけ）、how: まだ持っていない時の ヒント
+ */
+export const WEAR = {
+  crown: { slot: 'head', label: '花かんむり', icon: '🌸', how: 'ボールを とどける' },
+  hat: { slot: 'head', label: 'むぎわらぼうし', icon: '👒', how: 'たから 5こ' },
+  goldcrown: { slot: 'head', label: '金の王冠', icon: '👑', how: 'たから 20こ' },
+  glasses: { slot: 'face', label: 'まるメガネ', icon: '👓', how: 'たから 10こ' },
+  bandana: { slot: 'neck', label: '赤いバンダナ', icon: '🧣', how: 'カラスと こうかん' },
+  bell: { slot: 'neck', label: '金のすず', icon: '🔔', how: '福引きで 大当たり' },
+  bowtie: { slot: 'neck', label: 'ちょうネクタイ', icon: '🎀', how: 'たから 15こ' },
+};
+export const WEAR_SLOTS = ['head', 'face', 'neck'];
+
+/** まるメガネを、その子の目の位置に合わせる（rig から） */
+export function glassesFit(rig) {
+  const e = rig.eyes[1].position;
+  const er = rig.eyes[1].children[0].geometry.parameters.radius;
+  return { ex: Math.abs(e.x), ey: e.y, ez: e.z, er, hr: rig.dims.headR };
+}
+
+/** 犬の首まわり・頭・顔に つける きせかえ（fit: まるメガネの目の位置） */
+export function makeWear(kind, fit = null) {
   const g = new THREE.Group();
   if (kind === 'bandana') {
     const m = new THREE.MeshStandardMaterial({ color: 0xd8362f, roughness: 0.8, flatShading: true });
@@ -1057,7 +1078,99 @@ export function makeWear(kind) {
       f.position.set(Math.cos(a) * 0.12, 0.015, Math.sin(a) * 0.12);
       g.add(f);
     }
+    g.userData.top = 0.045;
+  } else if (kind === 'hat') {
+    // むぎわらぼうし：頭の上に ちょこんと、少し あみだに
+    const straw = new THREE.MeshStandardMaterial({ color: 0xe8cf8a, roughness: 0.92 });
+    const ribbon = new THREE.MeshStandardMaterial({ color: 0xd8362f, roughness: 0.75, side: THREE.DoubleSide });
+    const brim = new THREE.Mesh(cy(0.235, 0.245, 0.014, 30), straw);
+    brim.position.y = -0.012;
+    const top = new THREE.Mesh(cy(0.1, 0.122, 0.085, 24), straw);
+    top.position.y = 0.035;
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.1, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2), straw);
+    dome.scale.y = 0.32;
+    dome.position.y = 0.077;
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.1235, 0.1235, 0.028, 24, 1, true), ribbon);
+    band.position.y = 0.006;
+    g.add(brim, top, dome, band);
+    g.rotation.x = -0.14;
+    g.userData.top = 0.1;
+  } else if (kind === 'goldcrown') {
+    // 金の王冠：とがった6つの山と、3色の宝石
+    const gold = new THREE.MeshStandardMaterial({ color: 0xf0c04a, roughness: 0.22, metalness: 1, emissive: 0x6a4a10, emissiveIntensity: 0.3, side: THREE.DoubleSide });
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.108, 0.114, 0.055, 24, 1, true), gold);
+    band.position.y = 0.022;
+    g.add(band);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const c = Math.cos(a), s = Math.sin(a);
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.065, 4), gold);
+      spike.position.set(c * 0.104, 0.08, s * 0.104);
+      spike.rotation.y = -a + Math.PI / 4;
+      const tip = new THREE.Mesh(sph(0.013, 8, 6), gold);
+      tip.position.set(c * 0.104, 0.118, s * 0.104);
+      const col = [0xd8362f, 0x3e7fc4, 0x3fa86a][i % 3];
+      const gem = new THREE.Mesh(sph(0.015, 10, 8), new THREE.MeshStandardMaterial({ color: col, roughness: 0.1, metalness: 0.2, emissive: col, emissiveIntensity: 0.35 }));
+      gem.position.set(c * 0.116, 0.022, s * 0.116);
+      gem.scale.set(1, 1, 0.6);
+      gem.lookAt(c * 2, 0.022, s * 2);
+      g.add(spike, tip, gem);
+    }
+    g.rotation.x = -0.1;
+    g.userData.top = 0.13;
+  } else if (kind === 'bowtie') {
+    // ちょうネクタイ（首輪の前）：紺に白の水玉
+    const m = new THREE.MeshStandardMaterial({ color: 0x2f4a8a, roughness: 0.6 });
+    const tie = new THREE.Group();
+    // 四角すいを横にたおして、先を まんなかへ（平らな面が前）
+    const wingGeo = new THREE.ConeGeometry(0.052, 0.11, 4);
+    wingGeo.rotateY(Math.PI / 4);
+    for (const s of [-1, 1]) {
+      const wing = new THREE.Mesh(wingGeo, m);
+      wing.rotation.z = s * Math.PI / 2;
+      wing.position.x = s * 0.05;
+      wing.scale.set(0.92, 0.92, 0.45);
+      tie.add(wing);
+      for (const [dx, dy] of [[0.064, 0.016], [0.078, -0.018], [0.04, -0.007]]) {
+        const dot = new THREE.Mesh(sph(0.007, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        dot.position.set(s * dx, dy, 0.021);
+        tie.add(dot);
+      }
+    }
+    const knot = new THREE.Mesh(sph(0.026, 12, 8), m);
+    knot.scale.set(1, 0.95, 0.8);
+    knot.position.z = 0.008;
+    tie.add(knot);
+    // ふわふわの毛に うもれないように、首輪より少し前へ
+    tie.position.set(0, 0.012, 0.172);
+    tie.rotation.x = 0.35;
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.012, 6, 20), m);
+    band.rotation.x = Math.PI / 2 - 0.3;
+    g.add(band, tie);
+  } else if (kind === 'glasses') {
+    // まるメガネ：目の前に（頭の中の座標で、fit から作る）
+    const f = fit || { ex: 0.045, ey: 0, ez: 0.1, er: 0.017, hr: 0.12 };
+    const frame = new THREE.MeshStandardMaterial({ color: 0x3a2a22, roughness: 0.35, metalness: 0.4 });
+    const lensM = new THREE.MeshStandardMaterial({ color: 0xe8f4ff, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.22, depthWrite: false });
+    const R = Math.min(f.er * 1.55, f.ex * 0.9);
+    const z = f.ez + f.er * 1.15;
+    for (const s of [-1, 1]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(R, Math.max(0.0028, f.er * 0.15), 6, 26), frame);
+      ring.position.set(s * f.ex, f.ey, z);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(R, 20), lensM);
+      lens.position.set(s * f.ex, f.ey, z + 0.001);
+      // つる（耳のほうへ。毛に うもれる）
+      const len = f.hr * 0.7;
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(f.er * 0.22, f.er * 0.22, len), frame);
+      arm.position.set(s * (f.ex + R * 0.95), f.ey + R * 0.25, z - len / 2);
+      arm.rotation.y = s * 0.25;
+      g.add(ring, lens, arm);
+    }
+    const gap = Math.max(0.004, f.ex - R) * 2;
+    const bridge = new THREE.Mesh(new THREE.TorusGeometry(gap / 2, Math.max(0.0025, f.er * 0.13), 4, 10, Math.PI), frame);
+    bridge.position.set(0, f.ey + R * 0.15, z);
+    g.add(bridge);
   }
-  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.traverse((o) => { if (o.isMesh) o.castShadow = !o.material.transparent; });
   return g;
 }

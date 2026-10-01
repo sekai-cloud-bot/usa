@@ -6,6 +6,9 @@ const defaults = () => ({
   gifts: [],     // 見たおみやげエンディング
   detours: [],
   wear: [],      // もらったきせかえ
+  wearOn: {},    // 身につける きせかえ（場所ごと：head / neck / face）
+  treasures: [], // たからばこ（見つけた おたから）
+  titles: [],    // もらった称号
   clears: 0,
   best: null,    // いちばん早く駅に着いた時刻（ゲーム内）
   settings: { sound: true, quality: 'auto' },

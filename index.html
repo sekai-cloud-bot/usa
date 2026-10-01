@@ -56,7 +56,7 @@
   <div id="title-card" class="title-card"><div id="tc-main" class="tc-main"></div><div id="tc-sub" class="tc-sub"></div></div>
   <!-- 思い出カード（できごとの写真） -->
   <div id="memory" class="memory">
-    <div class="m-photo"><img id="m-img" alt=""></div>
+    <div class="m-photo"><img id="m-img" alt=""><div id="m-icon" class="m-icon"></div></div>
     <div class="m-body">
       <div class="m-kicker"><i class="m-dot"></i><span id="m-kind"></span><em id="m-new">NEW</em></div>
       <div id="m-title" class="m-title"></div>
@@ -103,6 +103,7 @@
       <div class="field"><span>耳</span><div id="opt-ear" class="chips"></div></div>
       <div class="field"><span>しっぽ</span><div id="opt-tail" class="chips"></div></div>
       <div class="field"><span>もこもこ</span><input id="in-fluff" type="range" min="0" max="100" step="1"></div>
+      <div class="field"><span>きせかえ <small id="wear-count"></small></span><div id="opt-wear" class="chips wear"></div></div>
       <button id="btn-custom-ok" class="cta">この子で行く</button>
     </div>
   </div>
@@ -115,6 +116,9 @@
         <canvas id="pause-map" width="720" height="540" aria-label="町の地図"></canvas>
         <div class="pm-legend"><span><i style="background:#ff8fa8"></i>ともだち</span><span><i style="background:#f6c24a"></i>みつけた</span><span><i style="background:#6fd3ae"></i>よりみち</span><span><i style="background:#a99bff"></i>けしき</span></div>
         <div id="pause-list" class="pause-list"></div>
+        <div id="pm-party" class="pm-party"></div>
+        <div class="pm-sub">たからばこ <span id="tb-count"></span></div>
+        <div id="tb-grid" class="tb-grid"></div>
       </div>
       <div class="pause-side">
         <div class="sheet-title">ひとやすみ</div>
@@ -127,6 +131,7 @@
           <div><b>PC</b> WASD/矢印 移動 ・ Shift 走る ・ Space ジャンプ ・ E アクション ・ F長押し くんくん ・ Q ほえる ・ C おすわり ・ ドラッグ/ホイール カメラ</div>
           <div><b>スマホ</b> 左をなぞって移動（大きく倒すと走る）・右をなぞってカメラ・右下のボタン</div>
           <div><b>ヒント</b> 光る印は「できごと」。くんくんすると、遠くの印も光の柱になって見える</div>
+          <div><b>おたから</b> くんくんすると、近くの「あやしいにおい」が見える。そこで ほる（長押し）</div>
         </div>
       </div>
     </div>

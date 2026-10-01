@@ -1,13 +1,14 @@
 import * as THREE from 'three';
-import { Person, Traffic, Train, makeItem, makeWear } from './actors.js';
+import { Person, Traffic, Train, makeItem, makeWear, glassesFit, WEAR, WEAR_SLOTS } from './actors.js';
 import { PointFX, ScentTrail, HintMarker, Motes } from './fx.js';
 import { Z, DIG, SCENT, ROAD, TRACK } from './town.js';
 import { RIVER, SHRINE } from './town2.js';
 import { EventDirector, EVENTS, FRIEND_IDS, KINDS } from './events.js';
 import { installHappenings } from './happen.js';
 import { Party } from './party.js';
+import { Treasures } from './treasure.js';
 import { audio } from '../audio.js';
-import { clamp, damp, dampAngle, angleDiff, lerp, smooth } from '../util.js';
+import { clamp, damp, dampAngle, angleDiff, lerp, smooth, disposeObject } from '../util.js';
 import { ROOM, BED } from '../room.js';
 
 export { EVENTS, KINDS };
@@ -74,6 +75,7 @@ export class Game {
     this.party = new Party(this);
     this.buildCore();
     installHappenings(this);
+    this.treasure = new Treasures(this);
   }
 
   // ------------------------------------------------------------
@@ -249,6 +251,7 @@ export class Game {
     this.state = 'prologue';
     this.flags = {};
     this.ev.reset();
+    this.treasure.reset();
     this.town.win.set(0.14);
     this.cam.snap(p);
     this.ui.setName(this.dogName);
@@ -256,27 +259,48 @@ export class Game {
     this.run(this.prologue());
   }
 
+  /** その場所（head / face / neck）に つける きせかえ。決めていなければ、いちばん新しく もらった物 */
+  wearChoice(slot) {
+    const s = this.save, have = s.wear || [];
+    const on = s.wearOn || (s.wearOn = {});
+    if (on[slot] !== undefined) return on[slot] && have.includes(on[slot]) ? on[slot] : null;
+    let k = null;
+    for (const u of have) if (WEAR[u] && WEAR[u].slot === slot) k = u;
+    return k;
+  }
   applyWear() {
-    const unlocked = this.save.wear || [];
-    for (const k of ['bandana', 'crown', 'bell']) if (unlocked.includes(k)) this.wear(k, true);
+    for (const slot of WEAR_SLOTS) {
+      const k = this.wearChoice(slot);
+      if (k) this.wear(k, true);
+    }
   }
   wear(kind, silent = false) {
     const rig = this.player.dog.rig;
-    if (!rig) return;
+    const info = WEAR[kind];
+    if (!rig || !info) return;
     if (rig.root.getObjectByName('wear-' + kind)) return;
-    const w = makeWear(kind);
+    // 同じ場所の きせかえは はずす
+    for (const k in WEAR) {
+      if (k === kind || WEAR[k].slot !== info.slot) continue;
+      const old = rig.root.getObjectByName('wear-' + k);
+      if (old) { old.parent.remove(old); disposeObject(old); }
+    }
+    const w = makeWear(kind, kind === 'glasses' ? glassesFit(rig) : null);
     w.name = 'wear-' + kind;
     const d = rig.dims;
-    if (kind === 'bandana' || kind === 'bell') {
+    if (info.slot === 'neck') {
       // 首のつけ根に（首輪の輪の半径は 0.14）
       const c = d.collar;
       w.position.set(0, c.y - (kind === 'bell' ? c.r * 0.1 : 0), c.z);
       w.scale.setScalar(c.r / 0.14);
       rig.body.add(w);
-    } else {
+    } else if (info.slot === 'head') {
       // 頭の上に（花かんむりの輪の半径は 0.12）
       w.position.set(0, d.crown.y, d.crown.z);
       w.scale.setScalar(d.crown.r / 0.12);
+      rig.head.add(w);
+    } else {
+      // まるメガネ：目の位置から作ってある（頭の中の座標）
       rig.head.add(w);
     }
     if (!silent) this.sparkle(this.player.pos.clone().add(V(0, 0.6, 0)), 20, 0xfff0c0, 2);
@@ -284,6 +308,9 @@ export class Game {
   unlockWear(k) {
     const w = this.save.wear || (this.save.wear = []);
     if (!w.includes(k)) w.push(k);
+    // もらった物は、次から身につけて出発
+    const on = this.save.wearOn || (this.save.wearOn = {});
+    if (WEAR[k]) on[WEAR[k].slot] = k;
   }
 
   *prologue() {
@@ -513,6 +540,7 @@ export class Game {
     this.updateItems(dt);
     this.updateHints(dt);
     this.ev.update(dt, dp, this.camera, this.sniffK, this.state === 'play' && F.escaped && !this.cineLock);
+    this.treasure.update(dt, playing && F.escaped);
     this.fx.update(dt);
     this.dust.update(dt);
     this.motes.update(dt, this.camera, this.day, this.area === 'home' && !F.escaped);
@@ -601,13 +629,16 @@ export class Game {
     }
     // 掘る
     if (!this.flags.dug && near(V(DIG.x, 0, DIG.z - 0.45), 0.95)) {
-      list.push({ id: 'dig', label: 'ほる', hold: true });
+      list.push({ id: 'dig', label: 'ほる', hold: true, dur: 1.6, at: V(DIG.x, 0, DIG.z - 0.7), done: () => this.run(this.crawl()) });
     }
     // できごと（先に登録したものが優先）
     for (const f of this.hooks.interact) {
       const a = f(dp);
       if (a) list.push(a);
     }
+    // おたから（くんくんで見つけた所）
+    const tr = this.treasure.interact(dp);
+    if (tr) list.push(tr);
     // 物
     let best = null, bd = 1.15;
     for (const it of this.items) {
@@ -629,23 +660,30 @@ export class Game {
     const a = list[0] || null;
     ui.action(a ? a.label : null);
     if (a && a.hold) {
+      // 長押し（ほる）。ちがう所へ移ったら、はじめから
+      if (this.holdId !== a.id) { this.holdId = a.id; this.digT = 0; }
+      const dur = a.dur || 1.6;
       if (ctl.held('action')) {
         d.digging = true;
+        // おたからは、その場所のほうを向いて ほる
+        const P = this.player.pos;
+        if (a.id !== 'dig' && Math.hypot(a.at.x - P.x, a.at.z - P.z) > 0.25) d.heading = dampAngle(d.heading, Math.atan2(a.at.x - P.x, a.at.z - P.z), 8, dt);
         this.digT += dt;
         if (Math.random() < dt * 14) {
-          this.puff(V(DIG.x + (Math.random() - 0.5) * 0.3, 0.05, DIG.z - 0.7), 2, 0x8a6446);
+          this.puff(V(a.at.x + (Math.random() - 0.5) * 0.3, a.at.y + 0.05, a.at.z + (Math.random() - 0.5) * 0.3), 2, a.dust || 0x8a6446);
           audio.play('dig');
         }
-        ui.progress(this.digT / 1.6);
-        if (this.digT >= 1.6) { d.digging = false; ui.progress(null); this.run(this.crawl()); }
+        ui.progress(this.digT / dur);
+        if (this.digT >= dur) { d.digging = false; ui.progress(null); this.digT = 0; this.holdId = null; a.done(); }
       } else {
         d.digging = false;
-        ui.progress(this.digT > 0 ? this.digT / 1.6 : null);
+        ui.progress(this.digT > 0 ? this.digT / dur : null);
       }
       ctl.consume('action');
       return;
     }
     d.digging = false;
+    this.holdId = null;
     ui.progress(null);
     if (ctl.consume('action') && a) a.act();
   }

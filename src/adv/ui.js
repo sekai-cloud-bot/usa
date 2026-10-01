@@ -123,13 +123,17 @@ export class UI {
     this.memBusy = true;
     const el = $('memory');
     const img = $('m-img');
-    if (m.url) { img.src = m.url; el.classList.remove('nophoto'); } else { img.removeAttribute('src'); el.classList.add('nophoto'); }
+    const icon = $('m-icon');
+    // 写真のかわりに、大きなアイコン（おたから・ごほうび）
+    el.classList.toggle('icon', !!m.icon);
+    icon.textContent = m.icon || '';
+    if (m.url) { img.src = m.url; el.classList.remove('nophoto'); } else { img.removeAttribute('src'); el.classList.toggle('nophoto', !m.icon); }
     el.style.setProperty('--kc', m.color);
     $('m-kind').textContent = m.kindLabel;
     $('m-new').style.display = m.isNew ? '' : 'none';
     $('m-title').textContent = m.title;
     $('m-line').textContent = m.line || '';
-    $('m-count').textContent = `できごと ${m.n} / ${m.total}`;
+    $('m-count').textContent = m.count || `できごと ${m.n} / ${m.total}`;
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');

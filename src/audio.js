@@ -383,6 +383,17 @@ export class Audio {
         [79, 83, 86, 91].forEach((m, i) => this._osc('sine', mtof(m), mtof(m), 0.5, 0.06, i * 0.07));
         this._osc('triangle', mtof(74), mtof(74), 0.7, 0.05);
         break;
+      // ---- おたから ----
+      case 'sniffhit':
+        // くんくんで「あやしいにおい」を見つけた：ぽわん
+        this._osc('sine', mtof(81), mtof(88), 0.18, 0.05);
+        this._osc('sine', mtof(93), mtof(93), 0.25, 0.03, 0.09);
+        break;
+      case 'treasure':
+        // ほり出した：ちいさなファンファーレと きらきら
+        [76, 80, 83, 88].forEach((m, i) => this._osc('triangle', mtof(m), mtof(m), 0.24, 0.11, i * 0.07));
+        [95, 100].forEach((m, i) => this._osc('sine', mtof(m), mtof(m), 0.35, 0.035, 0.3 + i * 0.06));
+        break;
       case 'howl': {
         // 犬の遠吠え：すべりあがって、ゆれながら下がる
         const ctx = this.ctx, now = ctx.currentTime;
