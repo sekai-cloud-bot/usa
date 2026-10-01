@@ -107,6 +107,20 @@
       <div class="field"><span>きせかえ <small id="wear-count"></small></span><div id="opt-wear" class="chips wear"></div></div>
       <button id="btn-custom-ok" class="cta">この子で行く</button>
     </div>
+    <!-- むきを変える（カードのよこ・うえ。犬をまわして、しっぽや耳を確かめる） -->
+    <div id="turn-bar" class="turn-bar" role="group" aria-label="犬の向きを変える">
+      <div class="tb-row">
+        <button id="turn-l" class="tb-btn" aria-label="左にまわす"><i class="tb-arrow l"></i></button>
+        <button id="turn-auto" class="tb-btn tb-auto on" aria-label="じどう回転"><span>じどう回転</span><b id="turn-auto-state">ON</b></button>
+        <button id="turn-r" class="tb-btn" aria-label="右にまわす"><i class="tb-arrow r"></i></button>
+      </div>
+      <div class="tb-row">
+        <button id="turn-front" class="tb-chip">まえ</button>
+        <button id="turn-side" class="tb-chip">よこ</button>
+        <button id="turn-back" class="tb-chip">うしろ</button>
+      </div>
+      <div id="turn-hint" class="turn-hint"></div>
+    </div>
   </div>
 
   <!-- 一時停止 -->

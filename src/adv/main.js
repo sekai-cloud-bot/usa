@@ -18,8 +18,8 @@ import { loadSave, save, getSave } from './save.js';
 import { shareDiary, fmtHour } from './share.js';
 import { TYPES, SIZES, PATTERNS, EARS, TAILS, COLORS, typeParams, normalizeDogParams, colorHex } from '../dogModel.js';
 import { audio } from '../audio.js';
-import { isTouchDevice, clamp, smooth } from '../util.js';
-import { BED } from '../room.js';
+import { isTouchDevice, clamp, damp, smooth, angleDiff } from '../util.js';
+import { BED, TABLE, ROOM } from '../room.js';
 
 const $ = (id) => document.getElementById(id);
 const loadingText = $('loading-text');
@@ -134,25 +134,168 @@ function titleCam(c, dt) {
   return true;
 }
 // うちの子えらびの時は、部屋の犬をアップで。
+// 犬ベッド（浮き輪のような形）に体が重ならないよう、あいている床に座らせて、
+// まわりを ぐるっと見られるようにする。向きは「じどう回転」「ドラッグ」「◀▶」「矢印キー」で変えられる。
 // 設定カードに隠れない所（横長の画面なら左、縦長なら上）のまんなかに犬が来るよう、画面の中心をずらす
 const customCard = document.querySelector('#screen-custom .sheet-card');
-function customCam(c) {
+const customStage = $('screen-custom');
+const customBar = $('turn-bar');
+const SPOT = { x: 1.5, z: 0.4, heading: Math.PI / 2 };   // 犬が座る場所（ベッド・テーブル・ソファから はなれた床）
+const AUTO_SPEED = 0.42;                                 // じどう回転の速さ（ラジアン/秒。約15秒で一周）
+const turn = {
+  rel: 0.6,          // 犬の正面を 0 としたときの、カメラの回りこみ角
+  pitch: 0.22,       // カメラの高さ（見下ろす角）
+  zoom: 1,           // 近づく・はなれる
+  hold: 0,           // さわった後、じどう回転を止めておく残り秒
+  goal: null,        // 見せたい向き（しっぽを選んだ時など）。そこまでゆっくり回る
+  cur: null,         // 壁や家具をよけたあとの、カメラまでの距離
+  auto: data.settings.turnAuto !== false,
+};
+const grabs = new Map();   // いま画面をさわっている指・マウス
+const wrapPi = (a) => angleDiff(0, a);
+
+// 壁や家具にめりこまない距離を返す
+const CAM_BOX = { x0: ROOM.minX + 0.3, x1: ROOM.maxX - 0.4, z0: ROOM.minZ + 0.3, z1: ROOM.maxZ - 0.3, y1: ROOM.h - 0.3 };
+const CAM_OBST = [
+  { x: BED.x, z: BED.z, r: BED.r + 0.2, h: 0.6 },
+  { x: TABLE.x, z: TABLE.z, r: TABLE.r + 0.2, h: TABLE.top + 0.3 },
+];
+const reachLimit = (o, d, lo, hi) => (d > 1e-6 ? (hi - o) / d : d < -1e-6 ? (lo - o) / d : Infinity);
+function camReach(ox, oy, oz, dx, dy, dz, want, least) {
+  let r = Math.min(want, town.col.rayDist(ox, oy, oz, dx, dy, dz, want + 0.3) - 0.3);
+  r = Math.min(r, reachLimit(ox, dx, CAM_BOX.x0, CAM_BOX.x1), reachLimit(oz, dz, CAM_BOX.z0, CAM_BOX.z1), reachLimit(oy, dy, 0, CAM_BOX.y1));
+  for (let s = 0.3; s < r; s += 0.1) {
+    const x = ox + dx * s, y = oy + dy * s, z = oz + dz * s;
+    for (const o of CAM_OBST) {
+      if (y < o.h && Math.hypot(x - o.x, z - o.z) < o.r) { r = s - 0.1; s = Infinity; break; }
+    }
+  }
+  return Math.max(r, least);
+}
+
+// 見せたい向きへ、いちばん近いまわり方で回る（candidates: 犬の正面を 0 とした角度）
+function turnTo(...candidates) {
+  let best = null;
+  for (const a of candidates) {
+    const d = angleDiff(turn.rel, a);
+    if (best === null || Math.abs(d) < Math.abs(best)) best = d;
+  }
+  turn.goal = wrapPi(turn.rel + best);
+  turn.hold = 4;
+}
+// ◀▶：45度ずつ（つづけて押すと そのぶん回る）
+function turnBy(delta) {
+  turn.goal = wrapPi((turn.goal ?? turn.rel) + delta);
+  turn.hold = 4;
+}
+
+function customCam(c, dt) {
   const d = player.dog;
   const W = innerWidth, H = innerHeight;
   const land = W >= H;
   const r = customCard.getBoundingClientRect();
+  // 犬は、カードと「向きボタン」を よけた あいている所のまんなかへ
+  const bar = customBar.getBoundingClientRect();
   const cx = land ? clamp(r.left / 2 / W, 0.2, 0.5) : 0.5;
-  const cy = land ? 0.5 : clamp(r.top / 2 / H, 0.2, 0.5);
-  // 縦長は横が狭いので引く。大きい子は そのぶん引く
+  const cy = land ? clamp(bar.top / 2 / H, 0.3, 0.5) : clamp((bar.bottom + r.top) / 2 / H, 0.2, 0.5);
+
+  // ---- 向き ----
+  // 矢印キー / A D（左右）・ W S（高さ）。さわっている間は じどう回転を止める
+  const keys = ctl.keys;
+  const kx = (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('KeyA') ? 1 : 0);
+  const ky = (keys.has('ArrowUp') || keys.has('KeyW') ? 1 : 0) - (keys.has('ArrowDown') || keys.has('KeyS') ? 1 : 0);
+  if (kx || ky) {
+    turn.rel -= kx * 1.8 * dt;
+    turn.pitch = clamp(turn.pitch + ky * 0.9 * dt, 0.02, 1.1);
+    turn.goal = null;
+    turn.hold = 2.5;
+  }
+  if (grabs.size) { turn.goal = null; turn.hold = 2.5; }
+  if (turn.goal !== null) {
+    const diff = angleDiff(turn.rel, turn.goal);
+    if (Math.abs(diff) < 0.01) { turn.rel = turn.goal; turn.goal = null; }
+    else turn.rel += diff * (1 - Math.exp(-6 * dt));
+  } else if (turn.auto && turn.hold <= 0) {
+    turn.rel -= AUTO_SPEED * dt;
+  }
+  turn.hold = Math.max(0, turn.hold - dt);
+  turn.rel = wrapPi(turn.rel);
+
+  // ---- 位置 ----
+  // 縦長は横が狭いので引く。大きい子は そのぶん引く（ただし、部屋の中に収まるよう ほどほどに）
   const sz = Math.max(0.9, d.rig.dims.scale);
-  const k = (land ? 1 : 1.55) * sz;
-  c.position.set(player.pos.x - 1.3 * k, 0.75 * sz + (k / sz - 1) * 0.3, player.pos.z + 1.35 * k);
-  c.lookAt(d.pos.x, 0.3 * sz, d.pos.z);
+  const want = 1.87 * (land ? 1 : 1.55) * Math.pow(sz, 0.8) * turn.zoom;
+  const az = d.heading + turn.rel;
+  const cp = Math.cos(turn.pitch);
+  const dx = Math.sin(az) * cp, dy = Math.sin(turn.pitch), dz = Math.cos(az) * cp;
+  const ty = 0.3 * sz;
+  const reach = camReach(d.pos.x, ty, d.pos.z, dx, dy, dz, want, 0.8 * sz);
+  // 壁や家具が近い時はすぐ寄り、ひらけたら ゆっくり戻る
+  turn.cur = turn.cur === null || reach < turn.cur ? reach : damp(turn.cur, reach, 4, dt);
+  c.position.set(d.pos.x + dx * turn.cur, ty + dy * turn.cur, d.pos.z + dz * turn.cur);
+  c.lookAt(d.pos.x, ty, d.pos.z);
   if (c.fov !== 42) c.fov = 42;
   c.setViewOffset(W, H, W * (0.5 - cx), H * (0.5 - cy), W, H);
   post.tilt = 0;
   return true;
 }
+
+// ドラッグ（マウス・指）で回す、ホイール・2本指でズーム。カードやボタンの上は そのまま使える
+const onCard = (e) => e.target.closest('.sheet-card, .turn-bar');
+customStage.addEventListener('pointerdown', (e) => {
+  if (mode !== 'custom' || onCard(e)) return;
+  customStage.setPointerCapture(e.pointerId);
+  grabs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  customStage.classList.add('grab');
+  $('turn-hint').classList.add('gone');
+});
+customStage.addEventListener('pointermove', (e) => {
+  const g = grabs.get(e.pointerId);
+  if (!g) return;
+  const dx = e.clientX - g.x, dy = e.clientY - g.y;
+  if (grabs.size >= 2) {
+    // 2本指：ひらく・とじるでズーム
+    const other = [...grabs.entries()].find(([id]) => id !== e.pointerId)[1];
+    const before = Math.hypot(g.x - other.x, g.y - other.y);
+    const after = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+    if (before > 8 && after > 8) turn.zoom = clamp(turn.zoom * before / after, 0.55, 1.5);
+  } else {
+    turn.rel -= dx * 0.008;
+    turn.pitch = clamp(turn.pitch + dy * 0.005, 0.02, 1.1);
+  }
+  g.x = e.clientX; g.y = e.clientY;
+});
+const endGrab = (e) => {
+  grabs.delete(e.pointerId);
+  if (!grabs.size) customStage.classList.remove('grab');
+};
+customStage.addEventListener('pointerup', endGrab);
+customStage.addEventListener('pointercancel', endGrab);
+customStage.addEventListener('wheel', (e) => {
+  if (mode !== 'custom' || onCard(e)) return;
+  e.preventDefault();
+  turn.zoom = clamp(turn.zoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.55, 1.5);
+  turn.hold = 2.5;
+}, { passive: false });
+
+// 画面のボタン
+function refreshTurnUI() {
+  $('turn-auto').classList.toggle('on', turn.auto);
+  $('turn-auto-state').textContent = turn.auto ? 'ON' : 'OFF';
+}
+$('turn-l').addEventListener('click', () => { audio.play('ui'); turnBy(Math.PI / 4); });
+$('turn-r').addEventListener('click', () => { audio.play('ui'); turnBy(-Math.PI / 4); });
+$('turn-auto').addEventListener('click', () => {
+  audio.play('ui');
+  turn.auto = !turn.auto;
+  turn.hold = 0;
+  data.settings.turnAuto = turn.auto;
+  save();
+  refreshTurnUI();
+});
+$('turn-front').addEventListener('click', () => { audio.play('ui'); turnTo(0); });
+$('turn-side').addEventListener('click', () => { audio.play('ui'); turnTo(Math.PI / 2, -Math.PI / 2); });
+$('turn-back').addEventListener('click', () => { audio.play('ui'); turnTo(Math.PI); });
 
 // ------------------------------------------------------------
 // ループ
@@ -304,21 +447,27 @@ function buildCustom() {
     };
     tw.appendChild(c);
   }
-  const chips = (el, list, key) => {
+  // view：その部分がよく見える向きへ まわる（しっぽ → 斜めうしろ、耳 → 斜めまえ）
+  const chips = (el, list, key, view) => {
     const w = $(el);
     w.innerHTML = '';
     for (const o of list) {
       const c = document.createElement('button');
       c.className = 'chip' + (dogParams[key] === o.id ? ' on' : '');
       c.textContent = o.label;
-      c.onclick = () => { dogParams = { ...dogParams, [key]: o.id }; applyDog(); buildCustom(); };
+      c.onclick = () => {
+        dogParams = { ...dogParams, [key]: o.id };
+        applyDog();
+        buildCustom();
+        if (view) turnTo(...view);
+      };
       w.appendChild(c);
     }
   };
   chips('opt-size', SIZES, 'size');
   chips('opt-pattern', PATTERNS, 'pattern');
-  chips('opt-ear', EARS, 'ear');
-  chips('opt-tail', TAILS, 'tail');
+  chips('opt-ear', EARS, 'ear', [0.45, -0.45]);
+  chips('opt-tail', TAILS, 'tail', [Math.PI - 0.5, -(Math.PI - 0.5)]);
   const cw = $('opt-color');
   cw.innerHTML = '';
   for (const col of COLORS) {
@@ -357,8 +506,9 @@ function buildCustom() {
 function applyDog() {
   player.setParams(dogParams);
   game.applyWear();
-  player.place(BED.x - 0.2, 0, BED.z + 0.5, -0.9);
+  player.place(SPOT.x, 0, SPOT.z, SPOT.heading);
   player.dog.setPose('sit');
+  player.dog.pose.sit = 1;   // 作りなおすたびに立ちあがって すわり直さない（変えた所をすぐ見られるように）
   player.dog.setExpr('happy');
 }
 // もこもこ：作り直しは少し重いので、動かしている間は まとめて（0.12秒ごと）
@@ -376,6 +526,11 @@ $('btn-custom').addEventListener('click', () => {
   show('screen-custom');
   $('screen-custom').classList.add('side');
   titleHour = 15.6;
+  Object.assign(turn, { rel: 0.6, pitch: 0.22, zoom: 1, hold: 0, goal: null, cur: null });
+  grabs.clear();
+  $('turn-hint').textContent = touch ? 'ゆびでなぞって まわす ・ 2本ゆびでズーム' : 'ドラッグで まわす ・ ホイールでズーム ・ 矢印キー';
+  $('turn-hint').classList.remove('gone');
+  refreshTurnUI();
   applyDog();
   cam.startCine(customCam);
   buildCustom();
@@ -386,6 +541,8 @@ $('btn-custom-ok').addEventListener('click', () => {
   data.dog = dogParams;
   save();
   titleHour = 17.45;
+  grabs.clear();
+  customStage.classList.remove('grab');
   player.place(BED.x, 0.05, BED.z, -2.2);
   player.dog.setPose('lie');
   player.dog.setExpr('sleep');

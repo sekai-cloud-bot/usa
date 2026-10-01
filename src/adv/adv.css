@@ -359,3 +359,32 @@ body.late .clock-pill .sun { background: radial-gradient(circle at 40% 38%, #ffd
   .sheet.side .sheet-card { padding: 10px 14px; gap: 6px; max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); }
   .sheet.side .sheet-title { font-size: 18px; }
 }
+
+/* うちの子えらび：犬をまわす操作（カードの外の あいた所をドラッグ、下のボタン） */
+.sheet.side { touch-action: none; cursor: grab; }
+.sheet.side.grab { cursor: grabbing; }
+.sheet.side .sheet-card { touch-action: pan-y; cursor: auto; }
+.turn-bar { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 8px; left: calc((100vw - min(460px, 52vw) - 4vw - var(--safe-r)) / 2); bottom: calc(5vh + var(--safe-b)); transform: translateX(-50%); width: max-content; max-width: 92vw; cursor: auto; }
+.tb-row { display: flex; gap: 8px; align-items: center; justify-content: center; }
+.tb-btn, .tb-chip { pointer-events: auto; background: var(--paper); border: 1px solid var(--line); box-shadow: var(--shadow); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-weight: 800; transition: transform .08s, background .2s; }
+.tb-btn:active, .tb-chip:active { transform: scale(.94); }
+.tb-btn { height: 44px; min-width: 44px; padding: 0 14px; border-radius: 999px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; }
+.tb-chip { height: 34px; padding: 0 16px; border-radius: 999px; font-size: 13px; }
+.tb-auto b { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #e9dccb; color: var(--ink-soft); }
+.tb-auto.on b { background: var(--accent); color: #fff; }
+.tb-arrow { width: 10px; height: 10px; border-top: 3px solid var(--ink); border-left: 3px solid var(--ink); border-radius: 2px; }
+.tb-arrow.l { transform: translateX(2px) rotate(-45deg); }
+.tb-arrow.r { transform: translateX(-2px) rotate(135deg); }
+.turn-hint { color: #fff; font-size: 12px; font-weight: 800; text-shadow: 0 1px 6px rgba(0,0,0,.6); text-align: center; transition: opacity .6s; pointer-events: none; }
+.turn-hint.gone { opacity: 0; }
+@media (orientation: portrait) {
+  /* 縦長は、犬が上・カードが下。ボタンは犬のうえに */
+  .turn-bar { left: 50%; bottom: auto; top: calc(12px + var(--safe-t)); }
+  .turn-hint { order: -1; }
+}
+@media (max-height: 500px) {
+  .turn-bar { bottom: calc(10px + var(--safe-b)); gap: 6px; }
+  .tb-btn { height: 38px; }
+  .tb-chip { height: 30px; }
+  .turn-hint { display: none; }
+}
