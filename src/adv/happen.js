@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Cat, Crow, Pigeons, Ducks, makeItem } from './actors.js';
+import { DogFollower, CatFollower, PigeonRider } from './party.js';
 import { Dog } from '../dog.js';
 import { typeParams } from '../dogModel.js';
 import { audio } from '../audio.js';
@@ -85,8 +86,12 @@ function lane(g) {
     };
   };
   g.ev.pos('cat', () => _a.copy(cat.pos).add(_h.set(0, 0.55, 0)));
+  // あいさつすると、ミケは 駅まで ついてきてくれる（なかま）
+  const mike = new CatFollower(g, cat, { id: 'mike', name: 'ミケ', gap: 1.45, order: 3 });
+  mike.onJoin = () => g.ui.toast('ミケが ついてきた！ 駅まで いっしょ', 'heart');
   g.on('update', (dt) => {
     const p = g.player, dp = p.pos;
+    if (cat.inParty) return;
     cat.update(dt);
     if (g.ev.isDone('cat') || cat.state === 'run') return;
     const dd = dist2(dp, cat.pos);
@@ -99,6 +104,15 @@ function lane(g) {
       g.sayAt(cat.pos, 'にゃ〜', 1.6);
       g.hearts(cat.pos.clone().add(V(0, 0.4, 0)), 4);
       g.ev.complete('cat', '塀の上で、ねこと あいさつした');
+      g.run(function* () {
+        yield 2.4;
+        audio.play('meow', 1.1);
+        g.sayAt(cat.pos.clone().add(V(0, 0.55, 0)), 'にゃ（…駅まで、ついていって あげる）', 2.6);
+        yield 0.8;
+        if (g.flags.arrival) return;
+        cat.inParty = true;
+        g.party.join(mike);
+      }());
     } else if (dd < 2.4 && dp.y < 0.5 && !hinted) {
       hinted = true;
       g.sayAt(cat.pos, '（…塀の上まで来れる？）', 2.4);
@@ -749,6 +763,9 @@ function park(g) {
   let st = 'sit', tagT = 0;
   const adapter = { resolveDog: (d) => { d.pos.y = 0; g.town.col.resolve(d.pos, d.radius, 0.5, 0.3); } };
   g.ev.pos('shiba', () => _a.copy(shiba.pos).setY(0.95));
+  // つかまえると、こむぎは 駅まで いっしょに来てくれる（なかま）
+  const komugi = new DogFollower(g, shiba, { id: 'komugi', name: 'こむぎ', gap: 1.2, order: 2 });
+  komugi.onJoin = () => g.ui.toast('こむぎが なかまに なった！ 駅まで いっしょ', 'heart');
   function* startTag() {
     st = 'bow';
     shiba.setPose('bow');
@@ -765,6 +782,7 @@ function park(g) {
     return false;
   });
   g.on('update', (dt) => {
+    if (st === 'party') return;
     const dp = g.player.pos;
     const mv = _h.set(0, 0, 0);
     if (st === 'run') {
@@ -783,7 +801,19 @@ function park(g) {
         g.hearts(shiba.pos.clone().add(V(0, 0.5, 0)), 6);
         g.ui.objective('においをたどって 駅へ');
         g.ev.complete('shiba', 'おいかけっこで、こむぎを つかまえた');
-        g.run(function* () { yield 2.5; st = 'home'; shiba.setPose('stand'); }());
+        g.run(function* () {
+          yield 2.4;
+          shiba.setPose('stand');
+          yield 0.5;
+          if (g.flags.arrival) { st = 'home'; return; }
+          shiba.bark(1.3);
+          shiba.setExpr('happy');
+          g.sayAt(shiba.pos.clone().add(V(0, 0.65, 0)), 'わんっ！（駅まで いっしょに 行く！）', 2.4);
+          st = 'party';
+          g.party.join(komugi);
+          yield 1.6;
+          g.say(g.oldman, 'おや、こむぎ。おともかい？ 気をつけて 行っておいで', 2.8);
+        }());
       } else if (tagT > 25) {
         st = 'home';
         g.ui.objective('においをたどって 駅へ');
@@ -1200,8 +1230,22 @@ function plaza(g) {
   // ハト
   const pigeons = new Pigeons(scene, V(104.5, 0.15, -67.5), 24);
   g.ev.pos('pigeons', () => _a.set(104.5, 1.1, -67.5));
+  // 飛んだハトのうち1羽（ポッポ）が、犬の頭に おりてくる（なかま）
+  const poppo = new PigeonRider(g);
+  let poppoSent = false;
   pigeons.onScatter = () => {
     if (!g.ev.isDone('pigeons')) g.run(function* () { yield 1.1; g.ev.complete('pigeons', 'バサバサッ！ 広場のハトが いっせいに飛んだ', { wait: 0 }); }());
+    if (poppoSent || g.state !== 'play' || g.flags.arrival) return;
+    poppoSent = true;
+    g.run(function* () {
+      yield 3.4;
+      if (g.state !== 'play' || g.flags.arrival) { poppoSent = false; return; }
+      poppo.flyIn(V(104.5 + 3, 6.5, -67.5 - 2));
+      g.party.join(poppo);
+      yield 1.7;
+      g.sayAt(poppo.pos.clone().add(V(0, 0.3, 0)), 'クルックー', 1.6);
+      g.ui.toast('ハトの ポッポが、あたまに のった！', 'heart');
+    }());
   };
   g.on('update', (dt) => pigeons.update(dt, g.player.pos, g.player.dog.speed));
   g.on('bark', (dp) => {

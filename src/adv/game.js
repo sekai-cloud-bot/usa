@@ -5,13 +5,14 @@ import { Z, DIG, SCENT, ROAD, TRACK } from './town.js';
 import { RIVER, SHRINE } from './town2.js';
 import { EventDirector, EVENTS, FRIEND_IDS, KINDS } from './events.js';
 import { installHappenings } from './happen.js';
+import { Party } from './party.js';
 import { audio } from '../audio.js';
-import { clamp, damp, lerp, smooth } from '../util.js';
+import { clamp, damp, dampAngle, angleDiff, lerp, smooth } from '../util.js';
 import { ROOM, BED } from '../room.js';
 
 export { EVENTS, KINDS };
 export const GIFTS = {
-  none: { label: 'なし', line: (n) => `…${n}？ むかえに来てくれたの？ ひとりで？` },
+  none: { label: 'なし', line: (n, party) => (party ? `${n}、ありがとう。…すごく うれしい` : `…${n}？ むかえに来てくれたの？ ひとりで？`) },
   stick: { label: 'りっぱな枝', line: () => 'えっ、これ おみやげ？ ふふ、りっぱな枝だね' },
   cap: { label: 'ぴかぴかの王冠', line: () => 'きらきら…！ 宝物、見せにきてくれたんだね' },
   ball: { label: 'だれかのボール', line: () => 'そのボール…だれの？ あとで一緒に返しにいこうね' },
@@ -70,6 +71,7 @@ export class Game {
     this.trainT = 20;
     this.hintT = 0;
     this.ev = new EventDirector(this);
+    this.party = new Party(this);
     this.buildCore();
     installHappenings(this);
   }
@@ -477,6 +479,8 @@ export class Game {
     }
     if (d.poseTarget === 'sit' && mv.lengthSq() > 0.01) this.sitT = 0;
     p.update(dt, mv);
+    // なかま（犬の歩いた道を、うしろから ついてくる）
+    this.party.update(dt);
     if (this.carryUpdate) this.carryUpdate(dt);
     else this.pushOut(p);
 
@@ -492,7 +496,14 @@ export class Game {
       if (!far || q.path || q.target) q.update(dt, dp);
     }
     const onRoad = dp.x > Z.road.x0 - 0.2 && dp.x < Z.road.x1 + 0.2 && dp.z < -44 && dp.z > -100;
-    this.traffic.update(dt, dp, onRoad);
+    const roadDogs = this._roadDogs || (this._roadDogs = []);
+    roadDogs.length = 0;
+    if (onRoad) roadDogs.push(dp);
+    for (const m of this.party.members) {
+      const q = m.pos;
+      if (q.x > Z.road.x0 - 0.2 && q.x < Z.road.x1 + 0.2 && q.z < -44 && q.z > -100) roadDogs.push(q);
+    }
+    this.traffic.update(dt, roadDogs);
     this.updateCars(dt, onRoad);
     this.updateCrossingSound();
     // 鳥のさえずり（公園・神社・家のまわり）
@@ -567,6 +578,13 @@ export class Game {
     for (const s of this.solidDogs || []) {
       const dx = dp.x - s.pos.x, dz = dp.z - s.pos.z, dd = Math.hypot(dx, dz);
       if (dd < 0.45 && dd > 1e-4 && Math.abs(dp.y - s.pos.y) < 0.8) { dp.x = s.pos.x + (dx / dd) * 0.45; dp.z = s.pos.z + (dz / dd) * 0.45; }
+    }
+    // なかまとも重ならない（細い塀の上では押さない：落ちてしまうので）
+    const b = p.support;
+    if (b && p.pos.y > 0.3 && (b.x1 - b.x0 < 0.5 || b.z1 - b.z0 < 0.5)) return;
+    for (const m of this.party.members) {
+      const dx = dp.x - m.pos.x, dz = dp.z - m.pos.z, dd = Math.hypot(dx, dz), r = m.radius;
+      if (dd < r && dd > 1e-4 && Math.abs(dp.y - m.pos.y) < 0.6) { dp.x = m.pos.x + (dx / dd) * r; dp.z = m.pos.z + (dz / dd) * r; }
     }
   }
 
@@ -684,6 +702,7 @@ export class Game {
   bark() {
     const p = this.player, dp = p.pos;
     p.dog.bark(1 + (Math.random() - 0.5) * 0.1);
+    this.party.react('bark');
     let used = false;
     for (const f of this.hooks.bark) if (f(dp)) used = true;
     if (used) return;
@@ -1048,23 +1067,41 @@ export class Game {
     this.giftId = GIFTS[gift] ? gift : 'none';
     let ct = 0;
     const self = this;
+    // 記念写真では、あの人が カメラのほうへ向きなおる（faceGoal）
+    const shot = { add: 0, goal: 0 };
     this.carryUpdate = (dt) => {
       ct += dt;
       if (ct > 0.5) O.kneel = false;
       O.pose = 'hug';
+      shot.add = damp(shot.add, shot.goal, 2.6, dt);
       const spin = smooth(clamp((ct - 1.0) / 2.6, 0, 1)) * turn;
-      O.heading = h0 + spin + Math.sin(ct * 2.2) * 0.05 * (ct > 3.6 ? 1 : 0);
+      O.heading = h0 + spin + shot.add + Math.sin(ct * 2.2) * 0.05 * (ct > 3.6 ? 1 : 0);
       arms(p.pos);
       d.heading = O.heading - 0.35;
       d.air = 0.75;
       d.excite = 1;
-      d.lookAt = ct % 3 < 1.4 ? O.headWorld(_w).clone() : self.camera.position.clone();
+      d.lookAt = ct % 3 < 1.4 && !shot.goal ? O.headWorld(_w).clone() : self.camera.position.clone();
       d.lookHold = 0.2;
       d.setExpr('happy');
-      O.lookAt = d.headWorld;
+      // 記念写真では、カメラのほうを見る
+      O.lookAt = shot.goal ? self.camera.position : d.headWorld;
       if (ct < 6.5 && Math.random() < dt * 2) self.hearts(p.pos.clone().add(V((Math.random() - 0.5) * 0.9, 1.2, (Math.random() - 0.5) * 0.9)), 1);
     };
     let orbit = camA - 0.35;
+    // なかまは、あの人のまわりに集まって おすわり（写真のころのカメラから見て、左右と前）
+    const party = this.party;
+    if (party.members.length) {
+      const a = orbit + 0.3;
+      const fx = Math.sin(a), fz = Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
+      // 縦長の画面では、横に広がりすぎないように
+      const w = this.camera.aspect < 1 ? 0.62 : 0.95;
+      const slots = [[w, 0.45], [-w, 0.45], [0.3 * w, 1.1]].map(([s, f]) => {
+        const v = V(O.pos.x + rx * s + fx * f, O.pos.y, O.pos.z + rz * s + fz * f);
+        this.town.col.resolve(v, 0.32, 0.4, 0.3);
+        return v;
+      });
+      party.gather(slots, O.pos);
+    }
     this.post.tilt = 0.45;
     this.post.tiltFocus = 0.58;
     cam.startCine((c, dt) => {
@@ -1085,21 +1122,84 @@ export class Game {
       this.say(O, '…え、なんで ぬれてるの？ ふふ、川で遊んできたの？', 3.0);
       yield 3.2;
     }
+    for (const line of this.partyLines()) {
+      this.say(O, line, 2.8);
+      yield 3.0;
+    }
     if (gift !== 'none') {
       this.say(O, 'これ、くれるの？', 1.8);
       yield 2.0;
     }
-    this.say(O, GIFTS[this.giftId].line(this.dogName), 3.4);
+    this.say(O, GIFTS[this.giftId].line(this.dogName, party.size > 0), 3.4);
     this.sparkle(p.pos.clone().add(V(0, 0.4, 0)), 24, 0xffe0a0);
     yield 3.5;
-    this.say(O, 'いっしょに かえろっか', 2.2);
-    yield 1.6;
+    if (party.size) {
+      this.say(O, 'みんなで いっしょに かえろっか', 2.2);
+      yield 1.2;
+      // 記念写真：みんなが入るように、少し引いて低い所から
+      yield* this.groupShot(O, shot);
+    } else {
+      this.say(O, 'いっしょに かえろっか', 2.2);
+      yield 1.6;
+    }
     ui.flash();
     audio.play('shutter');
     this.photo = this.capture();
     yield 1.4;
     this.state = 'result';
     this.finish();
+  }
+
+  /** 再会で、なかまのことを話す（多いと長くなるので3つまで） */
+  partyLines() {
+    const P = this.party, n = P.size, lines = [];
+    if (!n) return lines;
+    if (n >= 2) lines.push('…えっ、みんなで むかえに来てくれたの！？');
+    if (P.has('komugi')) lines.push(n >= 2 ? 'こむぎちゃんまで…！ あとで おじいさんの所に 送っていこうね' : 'あれ、こむぎちゃん？ いっしょに来てくれたの？');
+    if (P.has('mike')) lines.push('ねこさんも いっしょ？ ふふ、なかよしに なったんだね');
+    if (P.has('chick')) lines.push('カルガモの赤ちゃん…！？ 帰りに、池の お母さんの所へ つれていこうね');
+    if (P.has('poppo')) lines.push('…ところで、あたまの上の子は どなた？');
+    return lines.slice(0, 3);
+  }
+
+  /** 再会の記念写真：あいている向きを さがして、みんなが入る所へカメラを動かす */
+  *groupShot(O, shot) {
+    const cam = this.camera, col = this.town.col;
+    const narrow = cam.aspect < 1;
+    const want = narrow ? 5.0 : 3.9, el = 0.17;
+    const cx = O.pos.x, cy = O.pos.y + 0.85, cz = O.pos.z;
+    const base = Math.atan2(cam.position.x - cx, cam.position.z - cz);
+    let best = null;
+    for (const da of [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4]) {
+      const a = base + da;
+      const hit = col.rayDist(cx, cy, cz, Math.sin(a) * Math.cos(el), Math.sin(el), Math.cos(a) * Math.cos(el), want + 0.5);
+      const dist = Math.min(want, hit - 0.35);
+      if (!best || dist > best.dist + 0.25) best = { a, dist };
+      if (dist >= want - 0.01) { best = { a, dist }; break; }
+    }
+    const to = V(cx + Math.sin(best.a) * Math.cos(el) * best.dist, cy + Math.sin(el) * best.dist, cz + Math.cos(best.a) * Math.cos(el) * best.dist);
+    const look = V(cx, O.pos.y + 0.66, cz);
+    // あの人は カメラのほうへ（ほんの少しななめ）、なかまも カメラを見る
+    shot.goal = angleDiff(O.heading - shot.add, best.a - 0.12);
+    if (this.party.gathering) this.party.gathering.face.copy(to);
+    const p0 = cam.position.clone(), q0 = cam.quaternion.clone(), f0 = cam.fov;
+    const f1 = narrow ? 52 : 46;
+    // カメラの向き（-Z が look のほう）
+    const qT = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(to, look, cam.up));
+    this.post.tiltFocus = 0.55;
+    this.cine((c, dt, t) => {
+      const k = smooth(clamp(t / 1.3, 0, 1));
+      c.position.lerpVectors(p0, to, k);
+      c.quaternion.copy(q0).slerp(qT, k);
+      c.fov = lerp(f0, f1, k);
+      c.updateProjectionMatrix();
+      // みんなに ピントが合うように、ミニチュア風のぼかしは弱く
+      this.post.tilt = lerp(0.45, 0.12, k);
+      return true;
+    });
+    yield 1.9;
+    this.say(this.owner, 'はい、チーズ！', 1.2);
+    yield 0.9;
   }
 
   capture() {
@@ -1124,6 +1224,7 @@ export class Game {
       name: this.dogName, arrive, late: !!this.flags.late, gift: this.giftId, events: done,
       friends: done.filter((id) => FRIEND_IDS.includes(id)), memories: this.ev.memories.slice(),
       photo: this.photo, totalEvents: s.events.length, totalGifts: s.gifts.length, clears: s.clears, fortune: this.fortune || null,
+      party: this.party.names(),
     };
     if (this.onFinish) this.onFinish(this.result);
   }

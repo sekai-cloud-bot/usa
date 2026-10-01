@@ -367,7 +367,10 @@ export class Cat {
     const loaf = this.state === 'loaf' ? 1 : 0;
     this.lf = damp(this.lf ?? 1, loaf, 6, dt);
     const moving = this.target && this.state !== 'loaf';
-    if (moving) {
+    // なかまとして ついてくる時は、位置と速さを外から決める（drive: 歩く速さ）
+    if (this.drive != null) {
+      this.speed = this.drive;
+    } else if (moving) {
       const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z, d = Math.hypot(dx, dz);
       const sp = this.state === 'run' ? 3.8 : 1.0;
       if (d > 0.1) {
@@ -468,22 +471,68 @@ export class Crow {
 
 const _wRot = new THREE.Matrix4();
 const _wPos = new THREE.Matrix4();
+const _wM = new THREE.Matrix4();
 // ------------------------------------------------------------
 // ハトの群れ（インスタンス描画で2命令）
 // ------------------------------------------------------------
+// ハトの形（群れと、1羽だけのハトで同じもの）。原点は足もと、前は +Z
+let pigeonGeos = null;
+function pigeonParts() {
+  if (pigeonGeos) return pigeonGeos;
+  const body = mergeParts([
+    { geo: sph(0.1, 8, 6), matrix: M4(0, 0.13, 0, 0, 0, 0, 0.85, 0.8, 1.3), color: 0x9aa0ab },
+    { geo: sph(0.062, 8, 6), matrix: M4(0, 0.23, 0.1), color: 0x7a8290 },
+    { geo: sph(0.066, 8, 6), matrix: M4(0, 0.18, 0.07), color: 0x6a8a82 },
+    { geo: new THREE.ConeGeometry(0.018, 0.05, 4), matrix: M4(0, 0.225, 0.17, Math.PI / 2), color: 0xd9a0a0 },
+    { geo: new THREE.BoxGeometry(0.08, 0.015, 0.12), matrix: M4(0, 0.13, -0.16, 0.25), color: 0x5a606b },
+    { geo: cy(0.008, 0.008, 0.08, 3), matrix: M4(-0.03, 0.04, 0), color: 0xd97a7a },
+    { geo: cy(0.008, 0.008, 0.08, 3), matrix: M4(0.03, 0.04, 0), color: 0xd97a7a },
+  ]);
+  const wing = mergeParts([{ geo: new THREE.BoxGeometry(0.2, 0.012, 0.13), matrix: M4(0.1, 0, 0), color: 0x8a909b }]);
+  const mat = softMaterial({ rough: 0.65, rim: 0.45, self: 0.05 });
+  pigeonGeos = { body, wing, mat };
+  return pigeonGeos;
+}
+/**
+ * つばさの向き。side: -1 左 / 1 右、fold: 1 でたたむ、flap: はばたきの角度。
+ * 群れ（行列）と1羽（グループの回転）で同じ式を使う
+ */
+function wingPose(side, fold, flap) {
+  return {
+    x: side * (0.07 - 0.03 * fold), y: 0.16 + 0.015 * fold, z: -0.01 + 0.03 * fold,
+    ry: side * 1.4 * fold,
+    rz: side > 0 ? -0.05 + flap * (1 - fold) - fold * 0.35 : Math.PI + 0.05 - flap * (1 - fold) + fold * 0.35,
+  };
+}
+/** 1羽だけのハト（頭に乗る子など）。{ root, body, wings, pose(fold, flap) } */
+export function makePigeon() {
+  const P = pigeonParts();
+  const root = new THREE.Group();
+  const body = new THREE.Mesh(P.body, P.mat);
+  body.castShadow = true;
+  root.add(body);
+  const wings = [-1, 1].map((s) => {
+    const w = new THREE.Group();
+    const m = new THREE.Mesh(P.wing, P.mat);
+    m.castShadow = true;
+    w.add(m);
+    root.add(w);
+    return w;
+  });
+  const pose = (fold, flap) => {
+    wings.forEach((w, i) => {
+      const q = wingPose(i ? 1 : -1, fold, flap);
+      w.position.set(q.x, q.y, q.z);
+      w.rotation.set(0, q.ry, q.rz);
+    });
+  };
+  pose(1, 0);
+  return { root, body, wings, pose };
+}
+
 export class Pigeons {
   constructor(scene, center, count = 22) {
-    const bodyGeo = mergeParts([
-      { geo: sph(0.1, 8, 6), matrix: M4(0, 0.13, 0, 0, 0, 0, 0.85, 0.8, 1.3), color: 0x9aa0ab },
-      { geo: sph(0.062, 8, 6), matrix: M4(0, 0.23, 0.1), color: 0x7a8290 },
-      { geo: sph(0.066, 8, 6), matrix: M4(0, 0.18, 0.07), color: 0x6a8a82 },
-      { geo: new THREE.ConeGeometry(0.018, 0.05, 4), matrix: M4(0, 0.225, 0.17, Math.PI / 2), color: 0xd9a0a0 },
-      { geo: new THREE.BoxGeometry(0.08, 0.015, 0.12), matrix: M4(0, 0.13, -0.16, 0.25), color: 0x5a606b },
-      { geo: cy(0.008, 0.008, 0.08, 3), matrix: M4(-0.03, 0.04, 0), color: 0xd97a7a },
-      { geo: cy(0.008, 0.008, 0.08, 3), matrix: M4(0.03, 0.04, 0), color: 0xd97a7a },
-    ]);
-    const wingGeo = mergeParts([{ geo: new THREE.BoxGeometry(0.2, 0.012, 0.13), matrix: M4(0.1, 0, 0), color: 0x8a909b }]);
-    const m = softMaterial({ rough: 0.65, rim: 0.45, self: 0.05 });
+    const { body: bodyGeo, wing: wingGeo, mat: m } = pigeonParts();
     this.body = new THREE.InstancedMesh(bodyGeo, m, count);
     this.wing = new THREE.InstancedMesh(wingGeo, m, count * 2);
     this.body.castShadow = true;
@@ -558,11 +607,11 @@ export class Pigeons {
       b.fold = damp(b.fold ?? 1, flying ? 0 : 1, 10, dt);
       const flap = flying ? Math.sin(b.t * 30 + b.seed * 9) * 1.0 : 0;
       for (const side of [0, 1]) {
-        const sg = side ? 1 : -1;
         // 地上ではたたんで背中にそわせる（うしろ向き・少し下がる）
-        const wm = new THREE.Matrix4().makeRotationZ(sg > 0 ? -0.05 + flap * (1 - b.fold) - b.fold * 0.35 : Math.PI + 0.05 - flap * (1 - b.fold) + b.fold * 0.35);
-        wm.premultiply(_wRot.makeRotationY(sg * 1.4 * b.fold));
-        wm.premultiply(_wPos.makeTranslation(sg * (0.07 - 0.03 * b.fold), 0.16 + 0.015 * b.fold, -0.01 + 0.03 * b.fold));
+        const q = wingPose(side ? 1 : -1, b.fold, flap);
+        const wm = _wM.makeRotationZ(q.rz);
+        wm.premultiply(_wRot.makeRotationY(q.ry));
+        wm.premultiply(_wPos.makeTranslation(q.x, q.y, q.z));
         wm.premultiply(this.m4);
         this.wing.setMatrixAt(i * 2 + side, wm);
       }
@@ -707,7 +756,8 @@ export class Traffic {
     const ped = p >= 18 && p < 28 ? (p >= 25 ? 'blink' : 'green') : 'red';
     return { car, ped, p };
   }
-  update(dt, dog, dogOnRoad) {
+  /** dogs: 道にいる犬たち（プレイヤーと、なかま）の位置 */
+  update(dt, dogs) {
     this.phase += dt;
     const L = this.lights();
     this.carState = L.car;
@@ -744,8 +794,8 @@ export class Traffic {
         const gap = (front.z - c.z) * c.dir - (front.type.len + c.type.len) / 2;
         if (gap < 18) target = Math.min(target, Math.max(0, (gap - 2.5) * 0.8));
       }
-      // 道路の犬
-      if (dogOnRoad) {
+      // 道路の犬（なかまも）
+      for (const dog of dogs) {
         const dx = Math.abs(dog.x - c.lane);
         const dz = (dog.z - c.z) * c.dir;
         if (dx < 2.2 && dz > 0 && dz < 16) {
