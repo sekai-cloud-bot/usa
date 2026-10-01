@@ -626,35 +626,31 @@ export class Pigeons {
 // ------------------------------------------------------------
 let chickMat = null;
 export function makeChick() {
-  const m = chickMat || (chickMat = softMaterial({ rough: 0.8, rim: 0.55, self: 0.08 }));
+  // カモと同じ質感（同じシェーダーを使い回す）
+  const m = chickMat || (chickMat = softMaterial({ rough: 0.6, rim: 0.45, self: 0.05 }));
   const root = new THREE.Group();
   // 本物より少し大きめ（遠くからでも見えるように）
   root.scale.setScalar(1.45);
   const body = new THREE.Group();
   root.add(body);
-  const mesh = new THREE.Mesh(mergeParts([
+  // 体・頭・くちばし・目を 1つにまとめる（描画命令を少なく）
+  const parts = [
     { geo: sph(0.06, 12, 10), matrix: M4(0, 0.062, -0.005, 0, 0, 0, 0.85, 0.75, 1.1), color: 0x6b5a3a },
     { geo: sph(0.05, 10, 8), matrix: M4(0, 0.05, 0.018, 0, 0, 0, 0.8, 0.62, 1.0), color: 0xe6cf8a },
     { geo: sph(0.041, 12, 10), matrix: M4(0, 0.118, 0.05), color: 0xead48f },
     { geo: new THREE.SphereGeometry(0.043, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), matrix: M4(0, 0.122, 0.044, -0.35), color: 0x5a4a32 },
-    { geo: new THREE.BoxGeometry(0.008, 0.01, 0.05), matrix: M4(-0.033, 0.12, 0.06, 0, -0.35), color: 0x4a3c28 },
-    { geo: new THREE.BoxGeometry(0.008, 0.01, 0.05), matrix: M4(0.033, 0.12, 0.06, 0, 0.35), color: 0x4a3c28 },
-    { geo: rb(0.03, 0.012, 0.034, 0.005), matrix: M4(0, 0.108, 0.097), color: 0x3a3028 },
+    { geo: rb(0.026, 0.01, 0.026, 0.004), matrix: M4(0, 0.107, 0.094), color: 0x4a4038 },
     { geo: cy(0.01, 0.016, 0.03, 6), matrix: M4(0, 0.075, -0.072, -1.15), color: 0x5a4a32 },
     { geo: sph(0.02, 8, 6), matrix: M4(-0.05, 0.07, -0.005, 0, 0, 0, 0.5, 0.8, 1.3), color: 0x5e4e32 },
     { geo: sph(0.02, 8, 6), matrix: M4(0.05, 0.07, -0.005, 0, 0, 0, 0.5, 0.8, 1.3), color: 0x5e4e32 },
-  ]), m);
+  ];
+  for (const s of [-1, 1]) {
+    parts.push({ geo: sph(0.0085, 8, 6), matrix: M4(s * 0.029, 0.124, 0.079), color: 0x15100c });
+    parts.push({ geo: sph(0.003, 5, 4), matrix: M4(s * 0.029 + 0.003, 0.127, 0.087), color: 0xffffff });
+  }
+  const mesh = new THREE.Mesh(mergeParts(parts), m);
   mesh.castShadow = true;
   body.add(mesh);
-  const eyeM = new THREE.MeshBasicMaterial({ color: 0x15100c });
-  const hiM = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  for (const s of [-1, 1]) {
-    const e = new THREE.Mesh(sph(0.0085, 8, 6), eyeM);
-    e.position.set(s * 0.029, 0.124, 0.079);
-    const h = new THREE.Mesh(sph(0.003, 5, 4), hiM);
-    h.position.set(s * 0.029 + 0.003, 0.127, 0.087);
-    body.add(e, h);
-  }
   const footM = new THREE.MeshStandardMaterial({ color: 0x4a4440, roughness: 0.7 });
   const feet = [-1, 1].map((s) => {
     const f = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.006, 0.032), footM);
