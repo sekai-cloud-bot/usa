@@ -762,7 +762,8 @@ function park(g) {
   shiba.setPose('sit');
   g.shiba = shiba;
   g.solidDogs = [shiba];
-  let st = 'sit', tagT = 0;
+  // escaped: 一度ちゃんと逃げきったか（となりで「ワン」した瞬間に つかまえて終わらないように）
+  let st = 'sit', tagT = 0, escaped = false;
   const adapter = { resolveDog: (d) => { d.pos.y = 0; g.town.col.resolve(d.pos, d.radius, 0.5, 0.3); } };
   g.ev.pos('shiba', () => _a.copy(shiba.pos).setY(0.95));
   // つかまえると、こむぎは 駅まで いっしょに来てくれる（なかま）
@@ -777,6 +778,7 @@ function park(g) {
     st = 'run';
     shiba.setPose('stand');
     tagT = 0;
+    escaped = false;
     g.ui.objective('こむぎを つかまえろ！');
   }
   g.on('bark', (dp) => {
@@ -793,9 +795,12 @@ function park(g) {
       const cx = 55 - shiba.pos.x, cz = -64 - shiba.pos.z;
       mv.set(dx / (dd + 0.01) + cx * 0.04 + Math.sin(g.t * 1.7) * 0.5, 0, dz / (dd + 0.01) + cz * 0.04 + Math.cos(g.t * 1.3) * 0.5);
       if (mv.length() > 1) mv.normalize();
-      shiba.speedMul = dd < 3 ? 1.6 : 1.1;
+      // 走り出しは、ぴょんと はなれる
+      shiba.speedMul = tagT < 1.2 ? 1.8 : dd < 3 ? 1.6 : 1.1;
+      if (dd > 1.8) escaped = true;
       if (Math.random() < dt * 1.5) g.puff(shiba.pos, 1, 0xc9b79a);
-      if (dd < 0.75) {
+      // 隅に追いこまれて逃げられないときは、少したてば つかまえられる
+      if (dd < 0.75 && (escaped || tagT > 3.5)) {
         st = 'caught';
         shiba.setPose('belly');
         shiba.setExpr('happy');
