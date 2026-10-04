@@ -365,10 +365,10 @@ export function buildDog(params0, opts = {}) {
   // きせかえ（おそろいハーネス）でも あとから作れるように、作り方を rig に のこす
   const makeHarness = (color) => buildHarness(torso, { W, H, L, zG: L * 0.55 - T.legR * 1.35 - W * 0.2 }, puff + lumpA * 0.9 + furLen * 0.4, color);
   const harness = params.harness ? makeHarness(params.harness) : null;
-  // バンダナ：首に まいて、三角を 胸の前に（ハーネスの上に かさねる）
+  // バンダナ：たたんで 首に まく（ハーネスと かさなる所は その上に）
   if (params.bandana) {
     const nA = V(...neckA), nB = V(...neckB);
-    const bd = { W, H, L, c: nA.clone().lerp(nB, 0.72), ax: nB.clone().sub(nA).normalize() };
+    const bd = { W, H, L, c: nA.clone().lerp(nB, 0.66), ax: nB.clone().sub(nA).normalize() };
     body.add(buildBandana(torso, bd, puff + lumpA * 0.9 + furLen * 0.4, params.bandana, harness));
   }
   if (harness) body.add(harness);

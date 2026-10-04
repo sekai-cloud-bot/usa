@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp } from './util.js';
+import { clamp, lerp } from './util.js';
 
 // ------------------------------------------------------------
 // ハーネス（胸あてのついた ベストハーネス）。
@@ -394,7 +394,7 @@ export function buildHarness(shape, d, off, color = 'pink') {
 }
 
 // ------------------------------------------------------------
-// いちごがらの バンダナ（首に くるっと まいて、三角を 胸の前に たらす。結び目は 右の首すじ）と、迷子札。
+// いちごがらの バンダナ（たたんで 首に ぐるりと まき、右の首すじで 結ぶ）と、迷子札。
 // d: { W, H, L, c: 首の中心, ax: 首の向き(上・前) }、harness: いっしょに つける ハーネス（その上に かぶせる）
 // ------------------------------------------------------------
 const BANDANA = {
@@ -468,59 +468,33 @@ function bandanaMats(c) {
 export function buildBandana(shape, d, off, kind = 'ichigo', harness = null) {
   const c = BANDANA[kind] || BANDANA.ichigo;
   const m = bandanaMats(c);
-  const { W, H, L } = d;
   const g = new THREE.Group();
   g.name = 'bandana';
   const tile = 0.045;                 // 模様 1まい分の大きさ
-  // ---- 首に まいた ところ（前が 少し さがる） ----
-  const el = Math.atan2(d.ax.y, d.ax.z) - 0.12;
+  // 首を ぐるりと まく 輪の面（前が 少し さがる）。e1・e2 の面の中で 角度 a、a=−π/2 が 前
+  const el = Math.atan2(d.ax.y, d.ax.z) - 0.2;
   const ax = V(0, Math.sin(el), Math.cos(el));
   const e1 = V(1, 0, 0), e2 = new THREE.Vector3().crossVectors(ax, e1).normalize();
-  const bw = 0.0078, bt = 0.0036;
-  const band = ring(shape, d.c, e1, e2, 64, off + bt);
-  const bandGeo = strapGeometry(band.P, band.N, () => bw, bt, true);
-  const bandM = new THREE.Mesh(bandGeo, m.cloth);
-  bandM.castShadow = true;
-  g.add(bandM);
-  const nB = band.P.length;
-  const at = (a) => Math.round(((a / (Math.PI * 2)) % 1 + 1) % 1 * nB) % nB;
-  // 首の まわりの点（a: 角度）。下のふちから 少し上
-  const bandPt = (a) => {
-    const dir = e1.clone().multiplyScalar(Math.cos(a)).addScaledVector(e2, Math.sin(a));
-    return shape.surface(d.c, dir, 0.6).addScaledVector(ax, -bw * 0.5);
-  };
-
-  // ---- 三角：首の前から 胸へ たらす。体の面に そわせて、ハーネスの上では 浮かせる ----
-  const cB = V(0, -H * 0.05, L * 0.38);
-  const elT = -0.5;
-  const tip = shape.surface(cB, V(0, Math.sin(elT), Math.cos(elT)), 0.5);
-  const half = 1.42;                  // 首の前から 左右へ どこまで（角度）
-  const NA = 19, NB = 16;
-  const top = [];
-  for (let i = 0; i < NA; i++) top.push(bandPt(-Math.PI / 2 + ((i / (NA - 1)) * 2 - 1) * half));
-  let topLen = 0;
-  for (let i = 1; i < NA; i++) topLen += top[i].distanceTo(top[i - 1]);
-  const height = top[(NA - 1) >> 1].distanceTo(tip);
-  // 面の上の点と 法線
+  const aKnot = Math.PI + 0.45;       // 結び目（右の首すじ）。布の つぎ目も ここに かくす
+  // たたんだ 布の はば（前は 広く、うしろは 細く）と、まん中の ふくらみ
+  const half = (a) => lerp(0.0085, 0.0145, (1 - Math.sin(a)) / 2);
+  const bulge = 0.003;
+  const NA = 72, NR = 7;
   const base = [], nrm = [], lift = [];
-  for (let j = 0; j < NB; j++) {
-    const b = j / (NB - 1);
-    for (let i = 0; i < NA; i++) {
-      const a = (i / (NA - 1)) * 2 - 1;
-      // 上のふち（首）と 先（胸）の あいだ。左右は 下へいくほど せまく
-      const ii = (a * (1 - b) + 1) / 2 * (NA - 1);
-      const i0 = Math.floor(ii), f = ii - i0;
-      const p = top[i0].clone().lerp(top[Math.min(NA - 1, i0 + 1)], f).lerp(tip, b);
-      const S = shape.surface(cB, p.clone().sub(cB), 0.6);
+  for (let i = 0; i <= NA; i++) {
+    const a = aKnot + (i / NA) * Math.PI * 2;
+    const dir = e1.clone().multiplyScalar(Math.cos(a)).addScaledVector(e2, Math.sin(a));
+    for (let j = 0; j < NR; j++) {
+      const u = (j / (NR - 1)) * 2 - 1;     // −1: 下（体がわ）のふち、1: 上のふち
+      const S = shape.surface(d.c.clone().addScaledVector(ax, u * half(a)), dir, 0.6);
       base.push(S);
       nrm.push(shape.normal(S));
-      lift.push(off + 0.0024 + 0.002 * b);
+      lift.push(off + 0.0016 + bulge * (1 - u * u));
     }
   }
-  // ハーネスの ベルトや 胸あてが ある所は、その上まで 浮かせる（光線で さがす）
+  // ハーネスの ベルトが ある所は、その上まで 浮かせる（外から 体へ むけて 光線を うつ）
   if (harness) {
     harness.updateMatrixWorld(true);
-    // 外から 体へ むけて うつ（いちばん外がわの 面に あたる）
     const R = 0.04, rc = new THREE.Raycaster();
     rc.far = R;
     base.forEach((S, k) => {
@@ -528,44 +502,26 @@ export function buildBandana(shape, d, off, kind = 'ichigo', harness = null) {
       const h = rc.intersectObject(harness, true)[0];
       if (h) lift[k] = Math.max(lift[k], R - h.distance + 0.0022);
     });
-    // 布なので、まわりへ なめらかに（ふくらみを 少し広げてから ならす）
-    for (const op of ['max', 'avg', 'avg']) {
-      const L0 = lift.slice();
-      for (let j = 0; j < NB; j++) {
-        for (let i = 0; i < NA; i++) {
-          let acc = 0, n = 0;
-          for (let dj = -1; dj <= 1; dj++) {
-            for (let di = -1; di <= 1; di++) {
-              const jj = j + dj, ii = i + di;
-              if (jj < 0 || jj >= NB || ii < 0 || ii >= NA) continue;
-              const v = L0[jj * NA + ii];
-              if (op === 'max') acc = Math.max(acc, v); else { acc += v; n++; }
-            }
-          }
-          lift[j * NA + i] = op === 'max' ? acc : Math.max(L0[j * NA + i] * 0.85, acc / n);
-        }
-      }
-    }
   }
+  const P = base.map((S, k) => S.clone().addScaledVector(nrm[k], lift[k]));
+  smooth2(P, NA + 1, NR);
+  // ---- 布（まん中が ふっくらした 帯） ----
+  let len = 0;
   const pos = [], uv = [], idx = [];
-  const grid = [];
-  for (let j = 0; j < NB; j++) {
-    const b = j / (NB - 1);
-    const row = [];
-    for (let i = 0; i < NA; i++) {
-      const a = (i / (NA - 1)) * 2 - 1, k = j * NA + i;
-      // 先のほうは 毛から少し はなれて ふわっと
-      const S = base[k].clone().addScaledVector(nrm[k], lift[k]).addScaledVector(V(0, -0.35, 1).normalize(), 0.004 * b * b);
-      row.push(S);
-      pos.push(S.x, S.y, S.z);
-      uv.push((a * (1 - b) * topLen * 0.5) / tile, -(b * height) / tile);
+  const mid = (NR - 1) >> 1;
+  for (let i = 0; i <= NA; i++) {
+    if (i > 0) len += P[i * NR + mid].distanceTo(P[(i - 1) * NR + mid]);
+    const a = aKnot + (i / NA) * Math.PI * 2;
+    for (let j = 0; j < NR; j++) {
+      const p = P[i * NR + j];
+      pos.push(p.x, p.y, p.z);
+      uv.push(len / tile, ((j / (NR - 1)) * 2 - 1) * half(a) / tile);
     }
-    grid.push(row);
   }
-  for (let j = 0; j < NB - 1; j++) {
-    for (let i = 0; i < NA - 1; i++) {
-      const a = j * NA + i, b2 = a + 1, cc = a + NA + 1, dd = a + NA;
-      idx.push(a, dd, cc, a, cc, b2);
+  for (let i = 0; i < NA; i++) {
+    for (let j = 0; j < NR - 1; j++) {
+      const a = i * NR + j, b = a + 1, cc = a + NR + 1, dd = a + NR;
+      idx.push(a, b, cc, a, cc, dd);
     }
   }
   const sheet = new THREE.BufferGeometry();
@@ -576,39 +532,44 @@ export function buildBandana(shape, d, off, kind = 'ichigo', harness = null) {
   const sm = new THREE.Mesh(sheet, m.cloth);
   sm.castShadow = true;
   g.add(sm);
-  // ふちの 縫い目（ななめの 2辺）
-  for (const i of [0, NA - 1]) {
-    const pts = grid.map((row) => row[i]);
-    const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), NB * 2, 0.0013, 5);
-    g.add(new THREE.Mesh(tube, m.hem));
+  // 上下の ふち（たたんだ 布の 折り目。まるく）
+  for (const j of [0, NR - 1]) {
+    const pts = [];
+    for (let i = 0; i < NA; i++) pts.push(P[i * NR + j]);
+    const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), NA, 0.0017, 6, true);
+    const tm = new THREE.Mesh(tube, m.hem);
+    tm.castShadow = true;
+    g.add(tm);
   }
+  // 帯の まん中の線（結び目・迷子札の 位置さがし用）
+  const midP = [], midN = [];
+  for (let i = 0; i < NA; i++) { midP.push(P[i * NR + mid]); midN.push(nrm[i * NR + mid]); }
 
-  // ---- 結び目：右の首すじ。小さな こぶと、ぴょこんと 出た 2つの はし ----
+  // ---- 結び目：右の首すじ。ころんと した こぶと、ぴょこんと 出た 2つの はし ----
   {
-    const i = at(Math.PI + 0.45);
-    const { T, U } = frameAt(band.P, band.N, i, true);
-    const p = band.P[i].clone().addScaledVector(U, bt * 0.8);
-    const knot = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), m.cloth);
-    knot.scale.set(0.0085, 0.007, 0.0085);
+    const { T, U } = frameAt(midP, midN, 0, true);
+    const p = midP[0].clone().addScaledVector(U, 0.004);
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), m.cloth);
+    knot.scale.set(0.013, 0.012, 0.013);
     knot.position.copy(p);
     knot.castShadow = true;
     g.add(knot);
-    for (const [k, dn] of [[1, 0.9], [-1, 0.5]]) {
-      const flap = new THREE.Mesh(new THREE.ConeGeometry(0.008, 0.026, 4), m.cloth);
-      flap.scale.z = 0.35;
-      const dir = U.clone().multiplyScalar(0.55).addScaledVector(T, k * 0.7).addScaledVector(V(0, -1, 0), dn).normalize();
+    for (const [k, up] of [[0.55, 0.75], [-0.45, -0.85]]) {
+      const flap = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.04, 4), m.cloth);
+      flap.scale.z = 0.4;
+      const dir = U.clone().multiplyScalar(0.65).addScaledVector(T, k).addScaledVector(ax, up).normalize();
       flap.quaternion.setFromUnitVectors(V(0, 1, 0), dir);
-      flap.position.copy(p).addScaledVector(dir, 0.013);
+      flap.position.copy(p).addScaledVector(dir, 0.02);
       flap.castShadow = true;
       g.add(flap);
     }
   }
 
-  // ---- 迷子札：首の前の 左がわに ぶらさげる ----
+  // ---- 迷子札：首の前の 左がわ、帯の 下のふちに ぶらさげる ----
   {
-    const i = at(-Math.PI / 2 + 0.55);
-    const { U } = frameAt(band.P, band.N, i, true);
-    const p = band.P[i].clone().addScaledVector(U, bt + 0.004);
+    const i = Math.round((((-Math.PI / 2 + 0.55 - aKnot) / (Math.PI * 2)) % 1 + 1) % 1 * NA) % NA;
+    const { U } = frameAt(midP, midN, i, true);
+    const p = P[i * NR].clone().addScaledVector(U, 0.003);
     const o = new THREE.Group();
     o.position.copy(p);
     o.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(V(0, 0, 0), U, V(0, 1, 0)));
@@ -622,4 +583,17 @@ export function buildBandana(shape, d, off, kind = 'ichigo', harness = null) {
     g.add(o);
   }
   return g;
+}
+
+/** 帯の点（ni 列 × nj 行）を少し ならす。列の はし（つぎ目）は 両はしを そろえる */
+function smooth2(P, ni, nj) {
+  for (let k = 0; k < 2; k++) {
+    const Q = P.map((p) => p.clone());
+    for (let i = 0; i < ni; i++) {
+      const ia = i === 0 ? ni - 2 : i - 1, ib = i === ni - 1 ? 1 : i + 1;
+      for (let j = 0; j < nj; j++) {
+        P[i * nj + j].copy(Q[i * nj + j]).multiplyScalar(0.5).addScaledVector(Q[ia * nj + j], 0.25).addScaledVector(Q[ib * nj + j], 0.25);
+      }
+    }
+  }
 }
