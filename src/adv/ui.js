@@ -2,6 +2,10 @@ import * as THREE from 'three';
 
 const $ = (id) => document.getElementById(id);
 const _p = new THREE.Vector3();
+// 吹き出しを ずらす候補（近い順。横より たてに ずらすほうを 先に）
+const OFFSETS = [];
+for (let dy = -360; dy <= 360; dy += 12) for (let dx = -420; dx <= 420; dx += 24) if (dx || dy) OFFSETS.push([dx, dy]);
+OFFSETS.sort((a, b) => (Math.abs(a[1]) * (a[1] > 0 ? 1.15 : 1) + Math.abs(a[0]) * 1.4) - (Math.abs(b[1]) * (b[1] > 0 ? 1.15 : 1) + Math.abs(b[0]) * 1.4));
 
 const ICONS = {
   star: '★', nose: '👃', bolt: '⚡', flower: '✿', paw: '🐾', heart: '♥', gift: '🎁', eye: '☀',
@@ -235,9 +239,12 @@ export class UI {
   }
   hideBubbles(h) { this.bubbleRoot.style.visibility = h ? 'hidden' : ''; }
   updateBubbles() {
+    this.layoutTop();
     const now = performance.now();
     const W = innerWidth, H = innerHeight;
     if (!this.bubbles.length) return;
+    const dt = Math.min(0.1, (now - (this._bt || now)) / 1000);
+    this._bt = now;
     // 演出中は黒帯（高さ 9vh）の内側に収める（スマホの横向きで、吹き出しの上が切れていた）。
     // 黒帯は伸びるアニメーションの途中でも、伸びきった高さで考える
     const cine = document.body.classList.contains('cine');
@@ -245,6 +252,8 @@ export class UI {
     // ふだんは 上の表示（時計・目標の札・右上のボタン）に 重ならないように（スマホの縦向きでは 札が 2段目に来る）
     const top = cine ? band + 8 : Math.max(64, this.hudBottom() + 8);
     const bottom = H - band - 8;
+    // ほかの表示（通知・カード・字幕・ボタン など）と、先に置いた吹き出しにも 重ならないように
+    const obs = this.obstacles().slice();
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i];
       if (now > b.until) {
@@ -260,11 +269,101 @@ export class UI {
       const behind = _p.z > 1;
       // 位置は吹き出しの下のしっぽの先。本体は translate で上に乗る（margin-top: -14px 分も含める）
       const hw = Math.min(b.w / 2 + 8, W / 2);
-      const x = Math.min(W - hw, Math.max(hw, (_p.x * 0.5 + 0.5) * W));
-      const y = Math.min(bottom, Math.max(top + b.h + 14, (-_p.y * 0.5 + 0.5) * H));
+      const ax = (_p.x * 0.5 + 0.5) * W, ay = (-_p.y * 0.5 + 0.5) * H;   // 話している人
+      const x0 = Math.min(W - hw, Math.max(hw, ax));
+      const y0 = Math.min(bottom, Math.max(top + b.h + 14, ay));
+      // 重なっている 広さ（画面から はみ出す時は -1）
+      const overlap = (dx, dy) => {
+        const x = x0 + dx, y = y0 + dy;
+        if (x - hw < 0 || x + hw > W || y - b.h - 14 < top || y > bottom) return -1;
+        const l = x - b.w / 2 - 6, r = x + b.w / 2 + 6, t = y - b.h - 20, bt = y;
+        let s = 0;
+        for (const o of obs) if (l < o.r && r > o.l && t < o.b && bt > o.t) s += (Math.min(r, o.r) - Math.max(l, o.l)) * (Math.min(bt, o.b) - Math.max(t, o.t));
+        return s;
+      };
+      const fits = (dx, dy) => overlap(dx, dy) === 0;
+      // 重なる時は、近くの あいている所へ（前の ずらし方が まだ使えれば それ。行ったり来たり しないように）。
+      // どこにも あきが ない時は、いちばん 重なりの 少ない所
+      let tx = 0, ty = 0;
+      if (!behind && !fits(0, 0)) {
+        if (b.tx !== undefined && (b.tx || b.ty) && fits(b.tx, b.ty)) { tx = b.tx; ty = b.ty; }
+        else {
+          let found = false, best = overlap(0, 0), bx = 0, by = 0;
+          if (best < 0) best = Infinity;
+          for (let n = 0; n < OFFSETS.length; n++) {
+            const [dx, dy] = OFFSETS[n];
+            const s = overlap(dx, dy);
+            if (s === 0) { tx = dx; ty = dy; found = true; break; }
+            if (s > 0 && s < best * 0.8) { best = s; bx = dx; by = dy; }
+          }
+          if (!found) { tx = bx; ty = by; }
+        }
+      }
+      b.tx = tx; b.ty = ty;
+      // すっと 動かす
+      if (b.ox === undefined) { b.ox = tx; b.oy = ty; }
+      const k = 1 - Math.exp(-dt * 10);
+      b.ox += (tx - b.ox) * k;
+      b.oy += (ty - b.oy) * k;
+      const x = x0 + b.ox, y = y0 + b.oy;
       b.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+      // しっぽは 話している人の ほうへ
+      b.el.style.setProperty('--tx', `${Math.max(-b.w / 2 + 18, Math.min(b.w / 2 - 18, ax - x)).toFixed(1)}px`);
       b.el.style.opacity = behind ? '0' : '';
+      if (!behind) obs.push({ l: x - b.w / 2, r: x + b.w / 2, t: y - b.h - 14, b: y });
     }
+  }
+  /**
+   * スマホの縦向き：上の お知らせ（音の案内・だるまさん・ヒント・できごとカード・通知）を、
+   * 時計と目標の札の下に じゅんに ならべる（同じ高さに 出て かさならないように）。0.12秒ごと
+   */
+  layoutTop() {
+    const now = performance.now();
+    if (now - (this._ltT || 0) < 120) return;
+    this._ltT = now;
+    const els = this._stack || (this._stack = [$('sound-tap'), $('daruma'), $('hint'), $('memory'), this.toastRoot]);
+    if (!(innerWidth <= 520 && innerHeight > innerWidth)) {
+      if (this._stacked) { for (const el of els) el.style.top = ''; this._stacked = false; }
+      return;
+    }
+    this._stacked = true;
+    let y = 0;
+    for (const el of [$('objective'), this._clock || (this._clock = document.querySelector('#hud .clock-pill')), this._hr || (this._hr = document.querySelector('#hud .hud-right'))]) {
+      if (el.id === 'objective' && !el.classList.contains('show')) continue;
+      y = Math.max(y, el.getBoundingClientRect().bottom);
+    }
+    y += 8;
+    for (const el of els) {
+      el.style.top = `${Math.round(y)}px`;
+      const shown = el === this.toastRoot ? !!el.querySelector('.toast.show') : el.classList.contains('show');
+      if (shown) y = el.getBoundingClientRect().bottom + 8;
+    }
+  }
+  /** 吹き出しが よける 表示（0.15秒ごとに はかりなおす）：通知・できごとカード・ヒント・字幕・場所の名前・ボタン など */
+  obstacles() {
+    const now = performance.now();
+    if (now - (this._obT || 0) < 150) return this._ob;
+    this._obT = now;
+    const out = [];
+    const push = (r) => { if (r.width > 0 && r.height > 0) out.push({ l: r.left, r: r.right, t: r.top, b: r.bottom }); };
+    // 字幕・ヒントは 横に長い箱なので、文字の ところだけ
+    const text = (el) => { const rg = document.createRange(); rg.selectNodeContents(el); push(rg.getBoundingClientRect()); };
+    const hudOn = !$('hud').classList.contains('off');
+    for (const id of ['hint', 'caption', 'memory', 'daruma', 'prompt', 'carry', 'area-card', 'sound-tap']) {
+      const el = $(id);
+      if (!el || !el.classList.contains('show') || (!hudOn && el.closest('#hud'))) continue;
+      if (id === 'hint' || id === 'caption') text(el); else push(el.getBoundingClientRect());
+    }
+    if ($('title-card').classList.contains('show')) for (const id of ['tc-main', 'tc-sub']) text($(id));
+    for (const el of this.toastRoot.querySelectorAll('.toast.show')) push(el.getBoundingClientRect());
+    if (hudOn) {
+      // 右下の ボタン（ボタンの ところだけ。すき間は あけておく）
+      const pad = this._pad || (this._pad = document.querySelector('.pad'));
+      if (pad && pad.offsetParent) for (const bt of pad.querySelectorAll('.pbtn')) push(bt.getBoundingClientRect());
+      const st = $('stick');
+      if (st && st.classList.contains('on')) push(st.getBoundingClientRect());
+    }
+    return (this._ob = out);
   }
   letterTop() { return this._lt || (this._lt = document.querySelector('.letterbox.top')); }
   /** 上の表示（時計・目標の札・右上のボタン・音の案内）の いちばん下（0.3秒ごとに はかりなおす） */
