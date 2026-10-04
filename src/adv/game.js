@@ -61,7 +61,7 @@ export class Game {
     this.people = [];
     this.solid = [];
     this.items = [];
-    this.hooks = { update: [], interact: [], sit: [], bark: [], area: [], pick: new Map() };
+    this.hooks = { update: [], interact: [], sit: [], bark: [], area: [], bench: [], pick: new Map() };
     this.photoQueue = [];
     this.state = 'idle';
     this.t = 0;
@@ -121,7 +121,7 @@ export class Game {
   }
   say(who, text, dur = 2.6) {
     const name = who === this.owner ? '' : who.name;
-    this.ui.say(() => (who.headWorld ? who.headWorld(_w) : _w.copy(who.pos).add(_v.set(0, 0.7, 0))), text, dur, name);
+    this.ui.say(() => (who.headWorld ? who.headWorld(_w) : _w.copy(who.pos).add(_v.set(0, 0.7, 0))), text, dur, name, who);
   }
   sayAt(pos, text, dur, name = '') { this.ui.say(() => pos, text, dur, name); }
   sparkle(pos, n = 14, color = 0xffe6a8, shape = 2) {
@@ -200,7 +200,8 @@ export class Game {
     shopper({ kid: true, top: 0x9fd4b0, bottom: 0x3e6ea8, hat: 'yellow' }, [V(43.6, 0, 4), V(43.4, 0, -12), V(42.4, 0, -12), V(42.6, 0, 4)], 1.3);
     shopper({ top: 0xb58ae0, bottom: 0x4a5468, hairStyle: 'short', hair: 0x6a4330, bag: 0x3e6ea8 }, [V(-20, 0, 7.4), V(36, 0, 7.4), V(36, 0, 9.6), V(-20, 0, 9.6)], 1.0);
     // 公園の人
-    const sitOn = (p, b) => p.sitOn(b.x, b.z, b.ry, b.y);
+    // ベンチに すわる人（b.who：犬が となりに すわる時に 使う）
+    const sitOn = (p, b) => { p.sitOn(b.x, b.z, b.ry, b.y); b.who = p; };
     this.oldman = this.P({ name: 'おじいさん', hairStyle: 'bald', hair: 0xd8d2cc, top: 0x7a8a6a, bottom: 0x5b5b5b, glasses: true, hat: 'straw' }, 0, 0);
     sitOn(this.oldman, A.benches.park[1]);
     const jog = this.P({ top: 0xe8604c, bottom: 0x3b3f45, hairStyle: 'short', hat: 'cap', hatColor: 0x3b3f45 }, 52, -70.5);
@@ -765,7 +766,62 @@ export class Game {
     d.setPose('sit');
     d.setExpr('happy');
     this.sitT = 0;
-    for (const f of this.hooks.sit) if (f(dp)) break;
+    for (const f of this.hooks.sit) if (f(dp)) return;
+    // ベンチの そばなら、ぴょんと 上って すわる
+    const seat = this.benchSeat(dp);
+    if (seat) this.run(this.benchHop(seat));
+  }
+
+  /** 近くの ベンチの すわる所（人が すわっていれば、その となり） */
+  benchSeat(dp) {
+    let best = null, bd = 1.15;
+    for (const list of Object.values(this.A.benches)) {
+      for (const b of list) {
+        const ax = Math.cos(b.ry), az = -Math.sin(b.ry);   // ベンチの 長さの 向き
+        let s = clamp((dp.x - b.x) * ax + (dp.z - b.z) * az, -0.55, 0.55);
+        if (b.who) s = (s >= 0 ? 1 : -1) * 0.55;
+        const x = b.x + ax * s, z = b.z + az * s, top = b.y + 0.45;
+        const dist = Math.hypot(dp.x - x, dp.z - z);
+        if (dist < bd && dp.y < top + 0.3) { bd = dist; best = { b, x, z, y: top, heading: b.ry, on: dp.y > top - 0.15 }; }
+      }
+    }
+    return best;
+  }
+
+  /** ベンチに ぴょんと とびのって、前を むいて おすわり */
+  *benchHop(s) {
+    const p = this.player, d = p.dog;
+    const from = p.pos.clone(), h0 = d.heading;
+    const turn = angleDiff(h0, s.heading);
+    p.locked = true;
+    p.puppet = true;
+    const dur = s.on ? 0.25 : 0.42;
+    if (!s.on) {
+      d.setPose('stand');
+      d.squash = -0.6;
+      audio.play('jump');
+    }
+    let t = 0;
+    while (t < dur) {
+      const dt = yield;
+      t += dt || 0.016;
+      const k = clamp(t / dur, 0, 1);
+      p.pos.set(lerp(from.x, s.x, k), lerp(from.y, s.y, k) + (s.on ? 0 : Math.sin(k * Math.PI) * 0.32), lerp(from.z, s.z, k));
+      d.heading = h0 + turn * smooth(k);
+      d.syncRoot();
+    }
+    p.pos.set(s.x, s.y, s.z);
+    d.heading = s.heading;
+    d.syncRoot();
+    p.vy = 0;
+    p.grounded = true;
+    p.puppet = false;
+    p.locked = false;
+    if (!s.on) { d.squash = 0.5; audio.play('land', 0.5); }
+    d.setPose('sit');
+    d.setExpr('happy');
+    this.hearts(p.pos.clone().add(V(0, 0.55, 0)), 3);
+    for (const f of this.hooks.bench) f(s.b);
   }
 
   updateCars(dt, onRoad) {

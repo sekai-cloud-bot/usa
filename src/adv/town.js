@@ -983,6 +983,8 @@ export function buildTown(scene, renderer, day) {
   // ベンチの当たりは、長さに沿って3つの円（斜めに置いたベンチの端も抜けないように）
   const benchCol = (x, z, ry, y0) => {
     for (const o of [-0.5, 0, 0.5]) col.addCircle(x + Math.cos(ry) * o, z - Math.sin(ry) * o, 0.32, y0, y0 + 0.45, 'bench');
+    // 座面（犬が のれる）：長さに沿って 小さな うすい箱を4つ（ななめの ベンチでも はみ出さないように）
+    for (const o of [-0.6, -0.2, 0.2, 0.6]) col.addBoxC(x + Math.cos(ry) * o, z - Math.sin(ry) * o, 0.4, 0.4, 0.05, y0 + 0.4, 'seat');
   };
   anchors.benches = { park: [], plaza: [] };
   // 池の西の ベンチは、ふちの石に かからないように 池から はなす

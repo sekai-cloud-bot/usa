@@ -232,6 +232,7 @@ export function buildRiver(ctx) {
     const b = bench(g, x, z, ry, 0x9c7650);
     b.position.y = y;
     for (const o of [-0.5, 0, 0.5]) col.addCircle(x + Math.cos(ry) * o, z - Math.sin(ry) * o, 0.32, y, y + 0.45, 'bench');
+    for (const o of [-0.6, -0.2, 0.2, 0.6]) col.addBoxC(x + Math.cos(ry) * o, z - Math.sin(ry) * o, 0.4, 0.4, 0.05, y + 0.4, 'seat');
     return { x, z, ry, y };
   };
   anchors.benches.river = [benchAt(20, -113.2, Math.PI), benchAt(67, -113.2, Math.PI), benchAt(125, -113.2, Math.PI), benchAt(-30, -113.2, Math.PI)];

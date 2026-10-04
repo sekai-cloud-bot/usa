@@ -219,8 +219,9 @@ export class UI {
   }
 
   // ---- 吹き出し ----
-  say(getPos, text, dur = 2.5, name = '') {
-    // 同じ人の古い吹き出しは消す
+  say(getPos, text, dur = 2.5, name = '', key = null) {
+    // 同じ人の古い吹き出しは消す（key：話している人）
+    if (key) for (const o of this.bubbles) if (o.key === key) o.until = 0;
     const el = document.createElement('div');
     el.className = 'bubble';
     if (name) {
@@ -233,7 +234,7 @@ export class UI {
     el.appendChild(s);
     this.bubbleRoot.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
-    const b = { el, getPos, until: performance.now() + dur * 1000, w: 0, h: 0 };
+    const b = { el, getPos, key, until: performance.now() + dur * 1000, w: 0, h: 0 };
     this.bubbles.push(b);
     this.updateBubbles();
   }

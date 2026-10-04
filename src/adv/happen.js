@@ -435,24 +435,33 @@ function street(g) {
     butcher.lookAt = p.pos;
     g.say(butcher, 'おっ、いい子だ。揚げたてだぞ〜', 2.2);
     yield 1.8;
-    const f = V(Math.sin(p.heading), 0, Math.cos(p.heading));
-    const land = V(p.pos.x + f.x * 0.2, p.pos.y, p.pos.z + f.z * 0.2);
     const from = butcher.headWorld(V()).add(V(-0.3, -0.4, 0));
+    const groundY = p.pos.y;
+    // ジャンプしないと とどかない高さ（口の 0.5m 上）を通って、犬の うしろへ 落ちる山なり
+    // （すわったままでは 口のそばを 通らないので、ジャンプした時だけ キャッチできる）
+    const C = d.mouthWorld.clone().add(V(0, 0.5, 0));
+    const G = 3.5, tc = 1.15;   // ふわっと 山なり（とどくまで 1.15秒）
+    const vel = C.clone().sub(from).divideScalar(tc);
+    vel.y += 0.5 * G * tc;
     const mesh = makeItem('croquette');
+    mesh.position.copy(from);
     scene.add(mesh);
     butcher.pose = 'give';
     g.ui.toast('ジャンプで キャッチ！', 'bolt');
     audio.play('whoosh');
-    let t = 0, caught = false;
-    const dur = 1.3;
-    while (t < dur) {
+    let t = 0, caught = false, cue = false;
+    while (t < tc + 2) {
       const dt = yield;
       t += dt || 0.016;
-      const k = clamp(t / dur, 0, 1);
-      mesh.position.lerpVectors(from, land, k);
-      mesh.position.y += Math.sin(k * Math.PI) * 1.4 + (1 - k) * 0.25;
+      mesh.position.copy(from).addScaledVector(vel, t);
+      mesh.position.y -= 0.5 * G * t * t;
       mesh.rotation.x += 0.2;
-      if (k > 0.45 && mesh.position.distanceTo(d.mouthWorld) < 0.42) { caught = true; break; }
+      // とどく 少し前に「いまだ！」
+      if (!cue && t > tc - 0.6) { cue = true; g.sayAt(p.pos.clone().add(V(0, 1.15, 0)), 'いまだ！ ジャンプ！', 0.9); }
+      // 空中で、口の近くに 来た時だけ（よこ 0.42m・たて 0.45m）
+      const mw = d.mouthWorld, mp = mesh.position;
+      if (!p.grounded && Math.hypot(mp.x - mw.x, mp.z - mw.z) < 0.42 && Math.abs(mp.y - mw.y) < 0.45) { caught = true; break; }
+      if (t > tc && mesh.position.y <= groundY + 0.05) break;
     }
     butcher.pose = 'stand';
     if (caught) {
@@ -461,7 +470,7 @@ function street(g) {
       g.sayAt(p.pos.clone().add(V(0, 1.0, 0)), 'ナイスキャッチ！', 1.6);
       g.confetti(p.pos.clone().add(V(0, 0.7, 0)), 26);
     } else {
-      mesh.position.copy(land).setY(p.pos.y + 0.05);
+      mesh.position.y = groundY + 0.05;
       audio.play('drop');
       yield 0.4;
       scene.remove(mesh);
@@ -883,6 +892,12 @@ function park(g) {
     nearOwner = near;
   });
   g.on('bark', (dp) => g.oldman.pos.distanceTo(dp) < 3 && ownerTalk());
+  // ベンチの となりに すわると
+  g.on('bench', (b) => {
+    if (b.who === g.oldman) {
+      ownerSay(g.party.has('komugi') ? 'ほっほ、ならんで すわると、コロンちゃんと きょうだい みたいじゃのう' : 'おや、となりに すわるかい。コロンちゃんも よく そうやって すわるんじゃよ', 3.2);
+    } else if (b.who) g.say(b.who, 'あら、となりに どうぞ', 2.2);
+  });
 
   // すべり台
   const S = A.slide;
