@@ -68,7 +68,8 @@ export class Audio {
       if (!this._build()) return;
       this._watch();
     }
-    this._resume();
+    // タップの中なら すぐ鳴る。タップの外（「もういちど」の 読み込みなおし など）なら、鳴るまで ためして 案内を出す
+    if (this.ctx.state !== 'running') { this._kick(); this._retry(); }
   }
 
   /** 音の部品を作る（作りなおす時も、音量・BGMの こもり具合は そのまま） */
@@ -77,6 +78,7 @@ export class Audio {
     if (!AC) return false;
     this.ctx = new AC();
     const ctx = this.ctx;
+    ctx.onstatechange = () => this._stateChanged(ctx);
     this.master = ctx.createGain();
     this.master.gain.value = this.enabled ? (this.ducked ? 0.25 : 0.8) : 0;
     const comp = ctx.createDynamicsCompressor();
@@ -127,11 +129,14 @@ export class Audio {
     }
     for (const L of this.loops || []) { L.gain = null; L.out = null; L.next = 0; }
     this.lastPlay = {};
+    this.stallN = 0;
+    this.stalled = false;
+    this.lastCT = null;
     if (amb) { this.startAmbience(); this.setAmbience(amb); }
     this._kick();
   }
 
-  /** 画面に ふれた時に、無音の音を1つ鳴らして 音の出口を ひらく（iOS） */
+  /** タップの中で：無音の音を1つ鳴らして、音の出口を ひらく（iOS） */
   _kick() {
     const ctx = this.ctx;
     try {
@@ -149,17 +154,86 @@ export class Audio {
     ctx.resume().catch(() => {});
   }
 
-  /** 画面に ふれた時（ここでなら、どのブラウザでも 鳴らし直せる） */
-  _gesture() {
-    if (!this.ctx || document.hidden) return;
-    // 裏から戻って はじめて ふれた時：iOS は 作りなおす。ほかは 止まっていれば 鳴らし直し、
-    // それでも 動かなければ 次に ふれた時に 作りなおす
-    if (this.away && (this.ios || this.stuck)) { this.away = false; this.stuck = false; this._rebuild(); return; }
-    if (this.ctx.state !== 'running') {
-      this._kick();
-      clearTimeout(this.stuckT);
-      this.stuckT = setTimeout(() => { if (this.ctx.state !== 'running' && !document.hidden) { this.away = true; this.stuck = true; } }, 600);
+  /**
+   * 止まっている間、しばらく くり返し 鳴らし直してみる。
+   * 戻ってすぐは アプリが まだ前に出きっていなくて 失敗するので、1回では足りない。
+   * それでも もどらない時（iPhone は タップしないと もどせないことがある）は「タップ」の案内を出す
+   */
+  _retry() {
+    if (this.retryT) return;
+    let n = 0;
+    const id = setInterval(() => {
+      const ctx = this.ctx;
+      if (!ctx || document.hidden || ctx.state === 'running' || ++n > 40) {
+        clearInterval(id);
+        if (this.retryT === id) this.retryT = null;
+        return;
+      }
+      ctx.resume().catch(() => {});
+      if (n === 4) this._needTap(true);
+    }, 300);
+    this.retryT = id;
+    this._resume();
+  }
+
+  /** 「タップで 音が でます」の案内（onNeedTap に知らせる） */
+  _needTap(on) {
+    on = !!(on && this.enabled && this.ctx && !document.hidden);
+    if (on === this.tapShown) return;
+    this.tapShown = on;
+    if (this.onNeedTap) this.onNeedTap(on);
+  }
+
+  /** 音の状態が かわった（ブラウザに止められた時は、すぐ もどしにいく） */
+  _stateChanged(ctx) {
+    if (ctx !== this.ctx) return;
+    if (ctx.state === 'running') { this.stallN = 0; this.stalled = false; this._needTap(false); }
+    else if (ctx.state !== 'closed' && !document.hidden && !this.hiddenNow) this._retry();
+  }
+
+  /** 0.5秒ごと：止まっていないか、時間が すすまずに 黙っていないか、ページが ねむっていなかったか */
+  _tick() {
+    const now = performance.now(), gap = now - (this.lastTick || now);
+    this.lastTick = now;
+    const ctx = this.ctx;
+    if (!ctx || document.hidden) { this.lastCT = null; return; }
+    // しばらく うごいていなかった（タブや アプリの うらに いた）
+    if (gap > 2500) this._retry();
+    if (ctx.state === 'running') {
+      const ct = ctx.currentTime;
+      if (this.lastCT != null) {
+        // 動いていることになっているのに 時間が すすまない＝音が出ていない
+        this.stallN = ct - this.lastCT < (gap / 1000) * 0.25 ? (this.stallN || 0) + 1 : 0;
+        this.stalled = this.stallN >= 3;
+        this._needTap(this.stalled);
+      }
+      this.lastCT = ct;
+    } else {
+      this.lastCT = null;
+      this._retry();
     }
+  }
+
+  /**
+   * タップした時（本当の「ふれた」）：ここでなら、どのブラウザでも 鳴らし直せる。
+   * iPhone は、止められた音を 再開できないことがあるので 作りなおす（タップの中なら 鳴りだす）。
+   * ※ スティックや カメラを うごかす「なぞり」は タップに ならないので、ここでは 作りなおさない
+   *   （なぞりで作りなおすと、新しい音も タップ待ちで 止まったままに なる）
+   */
+  tap() {
+    if (!this.ctx || document.hidden) return;
+    if (this.ctx.state === 'running' && !this.stalled) return;
+    if (this.ios || this.stalled || this.kickFailed) { this.kickFailed = false; this._rebuild(); return; }
+    this._kick();
+    clearTimeout(this.kickT);
+    this.kickT = setTimeout(() => { if (this.ctx.state !== 'running') this.kickFailed = true; }, 500);
+  }
+  /** タップではない ふれ方（なぞり など）：再開だけ ためす */
+  _poke() {
+    const now = performance.now();
+    if (!this.ctx || document.hidden || this.ctx.state === 'running' || now - (this.pokeT || 0) < 250) return;
+    this.pokeT = now;
+    this.ctx.resume().catch(() => {});
   }
 
   // 別のタブやアプリへ行くとブラウザが音を止めるので、戻ってきたら鳴らし直す
@@ -167,20 +241,49 @@ export class Audio {
     const ua = navigator.userAgent || '';
     this.ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
     const leave = () => {
-      this.away = true;
+      this.hiddenNow = true;
+      this._needTap(false);
       if (this.ctx.state === 'running') this.ctx.suspend().catch(() => {});
     };
-    document.addEventListener('visibilitychange', () => { if (document.hidden) leave(); else this._resume(); });
+    const back = () => {
+      if (document.hidden) return;
+      this.hiddenNow = false;
+      this.lastCT = null;
+      this._retry();
+    };
+    document.addEventListener('visibilitychange', () => (document.hidden ? leave() : back()));
     addEventListener('pagehide', leave);
-    addEventListener('pageshow', () => this._resume());
-    addEventListener('focus', () => this._resume());
-    // 音を鳴らし直せるのは、画面に ふれた時やキーを押した時（iOS は touchend）
-    for (const ev of ['touchend', 'pointerup', 'mousedown', 'click', 'keydown']) addEventListener(ev, () => this._gesture(), { capture: true, passive: true });
+    addEventListener('pageshow', back);
+    addEventListener('focus', back);
+    // タップかどうか：iOS は、ほとんど うごかさずに はなした時だけが「タップ」
+    const starts = new Map();
+    const opt = { capture: true, passive: true };
+    addEventListener('touchstart', (e) => {
+      for (const t of e.changedTouches) starts.set(t.identifier, { x: t.clientX, y: t.clientY, t: performance.now() });
+      this._poke();
+    }, opt);
+    addEventListener('touchmove', () => this._poke(), opt);
+    addEventListener('touchend', (e) => {
+      let tap = false;
+      for (const t of e.changedTouches) {
+        const s0 = starts.get(t.identifier);
+        starts.delete(t.identifier);
+        if (s0 && Math.hypot(t.clientX - s0.x, t.clientY - s0.y) < 14 && performance.now() - s0.t < 800) tap = true;
+      }
+      const act = navigator.userActivation;
+      if (act ? act.isActive : tap) this.tap();
+      else this._poke();
+    }, opt);
+    for (const ev of ['click', 'mousedown', 'keydown']) addEventListener(ev, () => this.tap(), opt);
+    this.lastTick = performance.now();
+    setInterval(() => this._tick(), 500);
   }
 
   setEnabled(on) {
     this.enabled = on;
     if (this.master) this.master.gain.setTargetAtTime(on ? (this.ducked ? 0.25 : 0.8) : 0, this.ctx.currentTime, 0.05);
+    if (!on) this._needTap(false);
+    else if (this.ctx && (this.ctx.state !== 'running' || this.stalled)) this._needTap(true);
   }
 
   get ok() { return this.ctx && this.enabled && this.ctx.state === 'running'; }
