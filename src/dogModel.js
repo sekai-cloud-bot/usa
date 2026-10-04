@@ -42,7 +42,7 @@ export const TYPES = {
     snout: 0.16, snW: 0.3, snH: 0.25, snY: -0.44,
     eye: 0.14, eyeX: 0.31, eyeY: -0.14, nose: 0.13, cheek: 0.55, chest: 0.6,
     earS: 1.0, tailS: 1.0, lump: 0.03,
-    def: { color: 'white', pattern: 'solid', ear: 'fuwa', tail: 'pom', fluff: 1.0 },
+    def: { color: 'white', pattern: 'solid', ear: 'fuwa', tail: 'curl', fluff: 1.0 },
   },
   maru: {
     label: 'もふもふ まん丸', sub: 'ポメ・スピッツみたいな', size: 0.96,
