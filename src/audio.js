@@ -65,43 +65,82 @@ export class Audio {
 
   unlock() {
     if (!this.ctx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return;
-      this.ctx = new AC();
-      const ctx = this.ctx;
-      this.master = ctx.createGain();
-      this.master.gain.value = this.enabled ? 0.8 : 0;
-      const comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -14;
-      comp.ratio.value = 4;
-      this.master.connect(comp).connect(ctx.destination);
-      this.sfx = ctx.createGain();
-      this.sfx.gain.value = 1;
-      this.sfx.connect(this.master);
-      this.bgm = ctx.createGain();
-      this.bgm.gain.value = 0.0;
-      this.bgmFilter = ctx.createBiquadFilter();
-      this.bgmFilter.type = 'lowpass';
-      this.bgmFilter.frequency.value = 5000;
-      // ほんのりエコー
-      const delay = ctx.createDelay(1);
-      delay.delayTime.value = 0.36;
-      const fb = ctx.createGain();
-      fb.gain.value = 0.28;
-      const wet = ctx.createGain();
-      wet.gain.value = 0.35;
-      this.bgm.connect(this.bgmFilter);
-      this.bgmFilter.connect(this.master);
-      this.bgmFilter.connect(delay);
-      delay.connect(fb).connect(delay);
-      delay.connect(wet).connect(this.master);
-      const len = ctx.sampleRate;
-      this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
-      const d = this.noise.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      if (!this._build()) return;
       this._watch();
     }
     this._resume();
+  }
+
+  /** 音の部品を作る（作りなおす時も、音量・BGMの こもり具合は そのまま） */
+  _build() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    this.ctx = new AC();
+    const ctx = this.ctx;
+    this.master = ctx.createGain();
+    this.master.gain.value = this.enabled ? (this.ducked ? 0.25 : 0.8) : 0;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -14;
+    comp.ratio.value = 4;
+    this.master.connect(comp).connect(ctx.destination);
+    this.sfx = ctx.createGain();
+    this.sfx.gain.value = 1;
+    this.sfx.connect(this.master);
+    this.bgm = ctx.createGain();
+    this.bgm.gain.value = 0.0;
+    this.bgmFilter = ctx.createBiquadFilter();
+    this.bgmFilter.type = 'lowpass';
+    this.bgmFilter.frequency.value = this.mood === 'sleep' ? 900 : 5000;
+    // ほんのりエコー
+    const delay = ctx.createDelay(1);
+    delay.delayTime.value = 0.36;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.28;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.35;
+    this.bgm.connect(this.bgmFilter);
+    this.bgmFilter.connect(this.master);
+    this.bgmFilter.connect(delay);
+    delay.connect(fb).connect(delay);
+    delay.connect(wet).connect(this.master);
+    const len = ctx.sampleRate;
+    this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = this.noise.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return true;
+  }
+
+  /**
+   * 作りなおす（iPhone の Safari は、別のアプリやタブから戻ると、止まったまま
+   * 再開できなかったり、動いているのに 音が出なかったりするため）。
+   * 鳴っていた BGM・環境音・町の曲は、新しい部品で つづきから鳴らす
+   */
+  _rebuild() {
+    const old = this.ctx;
+    const amb = this.amb ? { ...this.ambLv } : null;
+    this.amb = null;
+    if (!this._build()) return;
+    try { if (old && old.close && old.state !== 'closed') Promise.resolve(old.close()).catch(() => {}); } catch (e) { /* noop */ }
+    if (this.bgmOn) {
+      this.bgm.gain.value = 0.11 * this.bgmLevel;
+      this.bgmNext = this.ctx.currentTime + 0.1;
+    }
+    for (const L of this.loops || []) { L.gain = null; L.out = null; L.next = 0; }
+    this.lastPlay = {};
+    if (amb) { this.startAmbience(); this.setAmbience(amb); }
+    this._kick();
+  }
+
+  /** 画面に ふれた時に、無音の音を1つ鳴らして 音の出口を ひらく（iOS） */
+  _kick() {
+    const ctx = this.ctx;
+    try {
+      const s = ctx.createBufferSource();
+      s.buffer = ctx.createBuffer(1, 1, 22050);
+      s.connect(ctx.destination);
+      s.start(0);
+    } catch (e) { /* noop */ }
+    if (ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {});
   }
 
   _resume() {
@@ -109,21 +148,39 @@ export class Audio {
     if (!ctx || ctx.state === 'running' || ctx.state === 'closed' || document.hidden) return;
     ctx.resume().catch(() => {});
   }
+
+  /** 画面に ふれた時（ここでなら、どのブラウザでも 鳴らし直せる） */
+  _gesture() {
+    if (!this.ctx || document.hidden) return;
+    // 裏から戻って はじめて ふれた時：iOS は 作りなおす。ほかは 止まっていれば 鳴らし直し、
+    // それでも 動かなければ 次に ふれた時に 作りなおす
+    if (this.away && (this.ios || this.stuck)) { this.away = false; this.stuck = false; this._rebuild(); return; }
+    if (this.ctx.state !== 'running') {
+      this._kick();
+      clearTimeout(this.stuckT);
+      this.stuckT = setTimeout(() => { if (this.ctx.state !== 'running' && !document.hidden) { this.away = true; this.stuck = true; } }, 600);
+    }
+  }
+
   // 別のタブやアプリへ行くとブラウザが音を止めるので、戻ってきたら鳴らし直す
   _watch() {
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) this._resume();
-      else if (this.ctx.state === 'running') this.ctx.suspend().catch(() => {});
-    });
+    const ua = navigator.userAgent || '';
+    this.ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    const leave = () => {
+      this.away = true;
+      if (this.ctx.state === 'running') this.ctx.suspend().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', () => { if (document.hidden) leave(); else this._resume(); });
+    addEventListener('pagehide', leave);
     addEventListener('pageshow', () => this._resume());
     addEventListener('focus', () => this._resume());
-    // iOS などは、画面にふれたときでないと鳴らし直せないことがある
-    for (const ev of ['pointerdown', 'touchend', 'keydown']) addEventListener(ev, () => this._resume(), { capture: true, passive: true });
+    // 音を鳴らし直せるのは、画面に ふれた時やキーを押した時（iOS は touchend）
+    for (const ev of ['touchend', 'pointerup', 'mousedown', 'click', 'keydown']) addEventListener(ev, () => this._gesture(), { capture: true, passive: true });
   }
 
   setEnabled(on) {
     this.enabled = on;
-    if (this.master) this.master.gain.setTargetAtTime(on ? 0.8 : 0, this.ctx.currentTime, 0.05);
+    if (this.master) this.master.gain.setTargetAtTime(on ? (this.ducked ? 0.25 : 0.8) : 0, this.ctx.currentTime, 0.05);
   }
 
   get ok() { return this.ctx && this.enabled && this.ctx.state === 'running'; }
@@ -762,10 +819,12 @@ export class Audio {
     }
   }
   duck(on) {
+    this.ducked = on;
     if (!this.master) return;
     this.master.gain.setTargetAtTime(this.enabled ? (on ? 0.25 : 0.8) : 0, this.ctx.currentTime, 0.15);
   }
   setBgmMood(mood) {
+    this.mood = mood;
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     if (mood === 'sleep') {

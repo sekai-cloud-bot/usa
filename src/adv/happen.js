@@ -828,7 +828,7 @@ function park(g) {
           st = 'party';
           g.party.join(koronF);
           yield 1.6;
-          g.say(g.oldman, 'おや、コロン。おともかい？ 気をつけて 行っておいで', 2.8);
+          ownerSay('おや、コロンちゃん。おともかい？ 気をつけて 行っておいで', 2.8);
         }());
       } else if (tagT > 25) {
         st = 'home';
@@ -843,6 +843,46 @@ function park(g) {
     } else if (koron.pos.distanceTo(dp) < 5) { koron.lookAt = dp.clone().setY(0.4); koron.lookHold = 0.3; koron.excite = 0.9; }
     koron.update(dt, mv, adapter);
   });
+
+  // コロンちゃんの飼い主（となりのベンチの おじいさん）：近くに来たり ワンと言ったりすると、
+  // 町の人の ふつうの あいさつではなく、コロンちゃんの話をする（その時のようすで かわる）
+  const OWNER_TALK = {
+    park: [
+      'うちの コロンちゃんはな、コーギーと 柴の ミックスなんじゃ',
+      'コロンちゃんは、ワンと あいさつすると ころんと 転がるんじゃよ',
+      'コロンちゃんは おいかけっこが 大好きでのう。つかまえられるかな？',
+      'ピンクのハーネスは、ばあさんの お見立てじゃ。よう にあうじゃろ？',
+    ],
+    run: ['ほっほ、コロンちゃんは すばしっこいぞ〜', 'がんばれ がんばれ。コロンちゃんは 手かげん せんからのう'],
+    party: [
+      'コロンちゃん、すっかり なかよしじゃのう',
+      'コロンちゃんはな、止まって ワンと言うと ころんと してくれるぞ',
+      'コロンちゃんは 歩くと おしりが ふりふりするんじゃ。かわいいじゃろ',
+      '駅まで、コロンちゃんを よろしくたのむよ',
+    ],
+    done: ['コロンちゃんと 遊んでくれて、ありがとうな', 'コロンちゃんが、また 遊ぼうって 言っとるよ'],
+  };
+  const talkI = {};
+  let talkT = -99, nearOwner = false;
+  function ownerSay(text, dur = 3.0) {
+    talkT = g.t;
+    g.say(g.oldman, text, dur);
+  }
+  const ownerTalk = () => {
+    if (g.t - talkT < 6) return false;
+    const k = st === 'run' || st === 'bow' ? 'run' : g.party.has('komugi') ? 'party' : g.ev.isDone('shiba') ? 'done' : 'park';
+    const list = OWNER_TALK[k];
+    talkI[k] = ((talkI[k] ?? -1) + 1) % list.length;
+    ownerSay(list[talkI[k]]);
+    return true;
+  };
+  g.on('update', () => {
+    const p = g.player;
+    const near = g.oldman.pos.distanceTo(p.pos) < 3.2;
+    if (near && !nearOwner && g.state === 'play' && !p.locked) ownerTalk();
+    nearOwner = near;
+  });
+  g.on('bark', (dp) => g.oldman.pos.distanceTo(dp) < 3 && ownerTalk());
 
   // すべり台
   const S = A.slide;

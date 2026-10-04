@@ -114,8 +114,9 @@ export const TYPES = {
     label: 'コロン', sub: 'コーギー×柴', size: 1.08, hidden: true,
     L: 0.215, W: 0.098, H: 0.104, legH: 0.125, legR: 0.036, thigh: 1.2,
     hr: 0.112, hy: 0.19, hz: 0.228, neck: 0.072,
-    snout: 0.66, snW: 0.27, snH: 0.22, snY: -0.3,
-    eye: 0.1, eyeX: 0.37, eyeY: 0.05, nose: 0.095, cheek: 0.6, chest: 0.65,
+    // マズルは 短く 幅広に、鼻は 大きく（細い鼻より、まるくて かわいい顔に）
+    snout: 0.4, snW: 0.37, snH: 0.28, snY: -0.33,
+    eye: 0.108, eyeX: 0.37, eyeY: 0.05, nose: 0.13, cheek: 0.85, chest: 0.65,
     earS: 1.3, tailS: 1.15, tailFat: 1.5, lump: 0.024, urajiro: true,
     def: { color: 'red', coat: '#cc9058', pattern: 'mask', ear: 'pin', tail: 'curl', fluff: 0.32, harness: 'pink' },
   },
