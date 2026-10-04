@@ -242,8 +242,8 @@ export class UI {
     // 黒帯は伸びるアニメーションの途中でも、伸びきった高さで考える
     const cine = document.body.classList.contains('cine');
     const band = cine ? Math.max(this.letterTop().getBoundingClientRect().bottom, H * 0.1) : 0;
-    // ふだんは上の目標の札（高さ 約56px）に重ならないように
-    const top = cine ? band + 8 : 64;
+    // ふだんは 上の表示（時計・目標の札・右上のボタン）に 重ならないように（スマホの縦向きでは 札が 2段目に来る）
+    const top = cine ? band + 8 : Math.max(64, this.hudBottom() + 8);
     const bottom = H - band - 8;
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i];
@@ -267,4 +267,21 @@ export class UI {
     }
   }
   letterTop() { return this._lt || (this._lt = document.querySelector('.letterbox.top')); }
+  /** 上の表示（時計・目標の札・右上のボタン・音の案内）の いちばん下（0.3秒ごとに はかりなおす） */
+  hudBottom() {
+    const now = performance.now();
+    if (now - (this._hbT || 0) < 300) return this._hb;
+    this._hbT = now;
+    let b = 0;
+    if (!$('hud').classList.contains('off')) {
+      this._hudTop = this._hudTop || [...document.querySelectorAll('#hud .clock-pill, #objective, #hud .hud-right')];
+      for (const el of this._hudTop) {
+        if (el.id === 'objective' && !el.classList.contains('show')) continue;
+        b = Math.max(b, el.getBoundingClientRect().bottom);
+      }
+    }
+    const st = $('sound-tap');
+    if (st && st.classList.contains('show')) b = Math.max(b, st.getBoundingClientRect().bottom);
+    return (this._hb = b);
+  }
 }

@@ -847,8 +847,9 @@ export class Traffic {
     this.blinkT += dt;
     for (const [g, r] of this.signals.ped) {
       const gOn = L.ped === 'green' || (L.ped === 'blink' && Math.sin(this.blinkT * 12) > 0);
-      g.material.emissiveIntensity = gOn ? 3 : 0.05;
-      r.material.emissiveIntensity = L.ped === 'red' ? 3 : 0.05;
+      // 消えている時も、人の形が うっすら 見える
+      g.material.emissiveIntensity = gOn ? 3.2 : 0.07;
+      r.material.emissiveIntensity = L.ped === 'red' ? 3.2 : 0.07;
     }
     if (L.ped === 'green' && Math.floor(this.phase * 2.5) !== Math.floor((this.phase - dt) * 2.5)) this.pedBeep = true;
     // 車

@@ -78,9 +78,10 @@ export class Audio {
     if (!AC) return false;
     this.ctx = new AC();
     const ctx = this.ctx;
+    this.gen = (this.gen || 0) + 1;
     ctx.onstatechange = () => this._stateChanged(ctx);
     this.master = ctx.createGain();
-    this.master.gain.value = this.enabled ? (this.ducked ? 0.25 : 0.8) : 0;
+    this.master.gain.value = this._vol();
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 4;
@@ -120,8 +121,10 @@ export class Audio {
   _rebuild() {
     const old = this.ctx;
     const amb = this.amb ? { ...this.ambLv } : null;
+    // 作れなかった時（数の上限 など）は、いまの部品の まま。次の タップで もう一度
+    try { if (!this._build()) return; } catch (e) { this.ctx = old; return; }
     this.amb = null;
-    if (!this._build()) return;
+    if (old) old.onstatechange = null;
     try { if (old && old.close && old.state !== 'closed') Promise.resolve(old.close()).catch(() => {}); } catch (e) { /* noop */ }
     if (this.bgmOn) {
       this.bgm.gain.value = 0.11 * this.bgmLevel;
@@ -145,13 +148,13 @@ export class Audio {
       s.connect(ctx.destination);
       s.start(0);
     } catch (e) { /* noop */ }
-    if (ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {});
+    if (ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch((e) => this.log('resume× ' + (e && e.name)));
   }
 
   _resume() {
     const ctx = this.ctx;
     if (!ctx || ctx.state === 'running' || ctx.state === 'closed' || document.hidden) return;
-    ctx.resume().catch(() => {});
+    ctx.resume().catch((e) => this.log('resume× ' + (e && e.name)));
   }
 
   /**
@@ -170,7 +173,7 @@ export class Audio {
         return;
       }
       ctx.resume().catch(() => {});
-      if (n === 4) this._needTap(true);
+      if (n === 4) { this.log('retry: まだ止まっている'); this._needTap(true); }
     }, 300);
     this.retryT = id;
     this._resume();
@@ -181,12 +184,14 @@ export class Audio {
     on = !!(on && this.enabled && this.ctx && !document.hidden);
     if (on === this.tapShown) return;
     this.tapShown = on;
+    this.log(on ? '案内を出す' : '案内を消す');
     if (this.onNeedTap) this.onNeedTap(on);
   }
 
   /** 音の状態が かわった（ブラウザに止められた時は、すぐ もどしにいく） */
   _stateChanged(ctx) {
     if (ctx !== this.ctx) return;
+    this.log('state');
     if (ctx.state === 'running') { this.stallN = 0; this.stalled = false; this._needTap(false); }
     else if (ctx.state !== 'closed' && !document.hidden && !this.hiddenNow) this._retry();
   }
@@ -204,7 +209,9 @@ export class Audio {
       if (this.lastCT != null) {
         // 動いていることになっているのに 時間が すすまない＝音が出ていない
         this.stallN = ct - this.lastCT < (gap / 1000) * 0.25 ? (this.stallN || 0) + 1 : 0;
+        const was = this.stalled;
         this.stalled = this.stallN >= 3;
+        if (this.stalled && !was) this.log('時間が すすまない');
         this._needTap(this.stalled);
       }
       this.lastCT = ct;
@@ -220,14 +227,31 @@ export class Audio {
    * ※ スティックや カメラを うごかす「なぞり」は タップに ならないので、ここでは 作りなおさない
    *   （なぞりで作りなおすと、新しい音も タップ待ちで 止まったままに なる）
    */
-  tap() {
+  tap(force = false) {
     if (!this.ctx || document.hidden) return;
-    if (this.ctx.state === 'running' && !this.stalled) return;
-    if (this.ios || this.stalled || this.kickFailed) { this.kickFailed = false; this._rebuild(); return; }
+    // iPhone は、別の画面から 戻って はじめての タップでは、動いているように 見えても 作りなおす
+    // （「動いていて 時間も すすむのに、音が出ない」ことがあり、それは 外からは わからないため）
+    force = force || (this.ios && this.backTap);
+    if (!force && this.ctx.state === 'running' && !this.stalled) return;
+    // 1回の タップで touchend・mousedown・click（と 案内の ボタン）が つづけて来る。
+    // 作りなおしたばかりの 音は、動きだすまで 少しのあいだ「止まっている」ので、
+    // そこで また作りなおすと 動きだす前に こわしてしまう。しばらくは 再開を たのむだけに
+    const now = performance.now();
+    if (now - (this.rebuiltAt || 0) < 1000) { this._kick(); return; }
+    if (force || this.ios || this.stalled || this.kickFailed) {
+      this.kickFailed = false;
+      this.backTap = false;
+      this.rebuiltAt = now;
+      this._rebuild();
+      this.log('作りなおし');
+      return;
+    }
     this._kick();
     clearTimeout(this.kickT);
     this.kickT = setTimeout(() => { if (this.ctx.state !== 'running') this.kickFailed = true; }, 500);
   }
+  /** 「音が でない時」の ボタン：動いているように 見えても 作りなおす（タップの中で 呼ぶ） */
+  repair() { this.log('音をなおす'); this.tap(true); }
   /** タップではない ふれ方（なぞり など）：再開だけ ためす */
   _poke() {
     const now = performance.now();
@@ -240,15 +264,22 @@ export class Audio {
   _watch() {
     const ua = navigator.userAgent || '';
     this.ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    // 離れる時：iPhone は 自分で止めず（ブラウザが止めて、戻った時に ブラウザが 動かしなおせるように）、
+    // 音量だけ 0 に。ほかは 止める
     const leave = () => {
+      if (this.hiddenNow) return;
       this.hiddenNow = true;
+      this.log('離れた');
       this._needTap(false);
-      if (this.ctx.state === 'running') this.ctx.suspend().catch(() => {});
+      if (this.ios) { this._mute(true); this.backTap = true; }
+      else if (this.ctx.state === 'running') this.ctx.suspend().catch(() => {});
     };
     const back = () => {
       if (document.hidden) return;
+      if (this.hiddenNow) this.log('戻った');
       this.hiddenNow = false;
       this.lastCT = null;
+      this._mute(false);
       this._retry();
     };
     document.addEventListener('visibilitychange', () => (document.hidden ? leave() : back()));
@@ -270,18 +301,46 @@ export class Audio {
         starts.delete(t.identifier);
         if (s0 && Math.hypot(t.clientX - s0.x, t.clientY - s0.y) < 14 && performance.now() - s0.t < 800) tap = true;
       }
+      // ほとんど うごかさずに はなした時だけ。userActivation は 少し前の タップでも しばらく true のままなので、それだけでは きめない
       const act = navigator.userActivation;
-      if (act ? act.isActive : tap) this.tap();
+      if (tap && (!act || act.isActive)) this.tap();
       else this._poke();
     }, opt);
     for (const ev of ['click', 'mousedown', 'keydown']) addEventListener(ev, () => this.tap(), opt);
     this.lastTick = performance.now();
     setInterval(() => this._tick(), 500);
+    // 調べ用：URL に ?oto を つけると、音の記録を 画面の左下に出す
+    if (/[?&]oto\b/.test(location.search)) {
+      this.logEl = document.createElement('pre');
+      this.logEl.style.cssText = 'position:fixed;left:4px;bottom:4px;z-index:99;margin:0;padding:6px 8px;max-width:92vw;font:10px/1.35 monospace;color:#fff;background:rgba(0,0,0,.6);border-radius:6px;pointer-events:none;white-space:pre-wrap';
+      document.body.appendChild(this.logEl);
+      this.log('記録 はじめ' + (this.ios ? '（iPhone）' : ''));
+    }
+  }
+
+  /** 調べ用の記録（時刻・できごと・何代目の音か・状態・音の時計・画面の うら・タップ中か） */
+  log(ev) {
+    const c = this.ctx, act = navigator.userActivation;
+    const line = `${(performance.now() / 1000).toFixed(1)} ${ev} #${this.gen || 0} ${c ? c.state : '-'} t=${c ? c.currentTime.toFixed(1) : '-'}${document.hidden ? ' うら' : ''}${act && act.isActive ? ' タップ中' : ''}`;
+    (this.logs = this.logs || []).push(line);
+    if (this.logs.length > 40) this.logs.shift();
+    if (this.logEl) this.logEl.textContent = this.logs.slice(-16).join('\n');
+  }
+
+  /** 全体の音量（オフ・ほかの画面にいる間は 0、話の間は 小さく） */
+  _vol() { return this.enabled && !this.muted ? (this.ducked ? 0.25 : 0.8) : 0; }
+  _mute(on) {
+    if (this.muted === on) return;
+    this.muted = on;
+    if (!this.master) return;
+    const g = this.master.gain, t = this.ctx.currentTime;
+    g.cancelScheduledValues(t);
+    if (on) g.setValueAtTime(0, t); else g.setTargetAtTime(this._vol(), t, 0.05);
   }
 
   setEnabled(on) {
     this.enabled = on;
-    if (this.master) this.master.gain.setTargetAtTime(on ? (this.ducked ? 0.25 : 0.8) : 0, this.ctx.currentTime, 0.05);
+    if (this.master) this.master.gain.setTargetAtTime(this._vol(), this.ctx.currentTime, 0.05);
     if (!on) this._needTap(false);
     else if (this.ctx && (this.ctx.state !== 'running' || this.stalled)) this._needTap(true);
   }
@@ -924,7 +983,7 @@ export class Audio {
   duck(on) {
     this.ducked = on;
     if (!this.master) return;
-    this.master.gain.setTargetAtTime(this.enabled ? (on ? 0.25 : 0.8) : 0, this.ctx.currentTime, 0.15);
+    this.master.gain.setTargetAtTime(this._vol(), this.ctx.currentTime, 0.15);
   }
   setBgmMood(mood) {
     this.mood = mood;

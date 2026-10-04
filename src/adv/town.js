@@ -985,7 +985,8 @@ export function buildTown(scene, renderer, day) {
     for (const o of [-0.5, 0, 0.5]) col.addCircle(x + Math.cos(ry) * o, z - Math.sin(ry) * o, 0.32, y0, y0 + 0.45, 'bench');
   };
   anchors.benches = { park: [], plaza: [] };
-  for (const [x, z, ry] of [[48.5, -63.5, -0.4], [61, -67.8, -0.35], [44.5, -76, Math.PI / 2], [59, -87, Math.PI]]) {
+  // 池の西の ベンチは、ふちの石に かからないように 池から はなす
+  for (const [x, z, ry] of [[48.5, -63.5, -0.4], [61, -67.8, -0.35], [43.2, -76, Math.PI / 2], [59, -87, Math.PI]]) {
     bench(park, x, z, ry);
     benchCol(x, z, ry, 0);
     anchors.benches.park.push({ x, z, ry, y: 0 });
@@ -995,9 +996,22 @@ export function buildTown(scene, renderer, day) {
     col.addCircle(x, z, 0.1, 0, 3.5, 'pole');
     pools.add(x, z, 3.2);
   }
-  // 水飲み場
-  cyl(park, 0.25, 0.3, 0.8, 66, 0, -62.5, 0xc2baad, 10);
-  col.addCircle(66, -62.5, 0.32, 0, 0.8, 'fountain');
+  // 水飲み場：石の柱に まるい 水受けと 銀の蛇口。足もとには 犬用の 低い 水飲み
+  {
+    const fx = 66, fz = -62.5;
+    const stone = mat(0xc9c2b6, { rough: 0.9 }), metal = mat(0xdfe3e6, { rough: 0.22, metal: 1 }), water = mat(0x7fb6d4, { rough: 0.06 });
+    box(park, 0.34, 0.68, 0.34, fx, 0, fz, stone, { round: 0.05 });
+    cyl(park, 0.3, 0.22, 0.13, fx, 0.67, fz, stone, 20);
+    cyl(park, 0.25, 0.25, 0.006, fx, 0.8, fz, water, 20, { cast: false });
+    cyl(park, 0.022, 0.026, 0.13, fx, 0.8, fz, metal, 8);
+    ball(park, 0.032, fx, 0.94, fz, metal, { seg: 10, seg2: 8 });
+    cyl(park, 0.012, 0.012, 0.07, fx + 0.03, 0.935, fz, metal, 6, { rz: -Math.PI / 2.6 });
+    box(park, 0.14, 0.02, 0.025, fx, 0.85, fz, metal);
+    cyl(park, 0.22, 0.2, 0.13, fx + 0.45, 0, fz + 0.12, stone, 18);
+    cyl(park, 0.17, 0.17, 0.006, fx + 0.45, 0.13, fz + 0.12, water, 18, { cast: false });
+  }
+  col.addCircle(66, -62.5, 0.32, 0, 0.95, 'fountain');
+  col.addCircle(66.45, -62.38, 0.22, 0, 0.14, 'fountain');
   // 花壇
   flowerBed(park, 45, -52.5, 49, -51, 70, 23, [0xf6d35a, 0xf28aa8, 0xffffff]);
   flowerBed(park, 64, -94.5, 70, -93, 80, 24);
@@ -1081,9 +1095,34 @@ export function buildTown(scene, renderer, day) {
   col.addBox(79, 95, -44, -43, 0, 3, 'edge');
   col.addBox(79, 81, -97, -96, 0, 3, 'edge');
   col.addBox(79, 81, -49.5, -48.5, 0, 3, 'edge');
-  // 信号機
+  // 信号機。灯りは 時間で かわるので、まとめて1つにする（bake）と 光らなくなる。noBake で はずす
   const signals = { car: [], ped: [] };
-  const sigMat = (c) => new THREE.MeshStandardMaterial({ color: 0x222222, emissive: c, emissiveIntensity: 0.05, roughness: 0.4 });
+  const sigMat = (c, map = null) => {
+    const m = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, emissive: c, emissiveIntensity: 0.05, roughness: 0.4, emissiveMap: map });
+    m.userData.noBake = true;
+    return m;
+  };
+  // 歩行者信号の絵：赤は 立ちどまっている人、青は 歩いている人（光るのは 人の形だけ）
+  const pedTex = (walk) => canvasTex(64, 72, (c, w, h) => {
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = c.strokeStyle = '#fff';
+    c.lineCap = c.lineJoin = 'round';
+    c.lineWidth = 8;
+    c.beginPath(); c.arc(32, 12, 7, 0, Math.PI * 2); c.fill();
+    const seg = (pts) => { c.beginPath(); c.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) c.lineTo(pts[i], pts[i + 1]); c.stroke(); };
+    if (walk) {
+      seg([33, 24, 30, 44]);
+      seg([20, 38, 31, 28, 42, 36]);
+      seg([18, 64, 30, 44, 36, 53, 44, 62]);
+    } else {
+      c.lineWidth = 10;
+      seg([32, 24, 32, 46]);
+      c.lineWidth = 7;
+      seg([24, 44, 32, 28, 40, 44]);
+      seg([27, 66, 32, 46, 37, 66]);
+    }
+  }, { aniso: 4 });
   const makeCarSignal = (x, z, ry) => {
     const g = new THREE.Group();
     cyl(g, 0.09, 0.1, 5.2, 0, 0, 0, 0x8e949a, 8);
@@ -1108,12 +1147,13 @@ export function buildTown(scene, renderer, day) {
     const g = new THREE.Group();
     cyl(g, 0.07, 0.07, 2.9, 0, 0, 0, 0x8e949a, 8);
     box(g, 0.34, 0.8, 0.2, 0, 2.2, 0, 0x3c4146, { round: 0.03 });
-    const red = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.3), sigMat(0xff3a2a));
+    const red = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.3), sigMat(0xff3a2a, pedTex(false)));
     red.position.set(0, 2.8, 0.11);
-    const green = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.3), sigMat(0x2fd17a));
+    const green = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.3), sigMat(0x2fd17a, pedTex(true)));
     green.position.set(0, 2.42, 0.11);
     g.add(red, green);
-    // 人の形（簡単なアイコン）
+    // 道の むこうから 見ても わかるように、少し大きめ
+    g.scale.setScalar(1.25);
     g.position.set(x, 0, z);
     g.rotation.y = ry;
     road.add(g);

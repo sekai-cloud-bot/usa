@@ -425,6 +425,12 @@ $('btn-start').addEventListener('click', () => { audio.unlock(); audio.play('ok'
 // 音が止まっている時（別のアプリやタブから戻った時など）は、タップの案内。タップで 音を もどす
 audio.onNeedTap = (on) => $('sound-tap').classList.toggle('show', on);
 $('sound-tap').addEventListener('click', () => audio.tap());
+// 動いているのに 音が出ない時も、ここで 作りなおせる（オフなら オンにもどす）
+$('btn-sound-fix').addEventListener('click', () => {
+  if (!data.settings.sound) { data.settings.sound = true; audio.setEnabled(true); soundLabel(); save(); }
+  audio.repair();
+  audio.play('ok');
+});
 $('btn-sound').addEventListener('click', () => { data.settings.sound = !data.settings.sound; audio.unlock(); audio.setEnabled(data.settings.sound); soundLabel(); save(); });
 $('btn-sound2').addEventListener('click', () => { data.settings.sound = !data.settings.sound; audio.setEnabled(data.settings.sound); soundLabel(); save(); });
 

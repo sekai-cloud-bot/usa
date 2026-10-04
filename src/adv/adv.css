@@ -331,6 +331,12 @@ body.late .clock-pill .sun { background: radial-gradient(circle at 40% 38%, #ffd
   .toasts { top: calc(116px + var(--safe-t)); }
   .friends { padding: 7px 10px; }
 }
+/* スマホの縦向き：右上の「できごと」は 数だけにして、時計の「電車まで…」に 重ならないように */
+@media (max-width: 480px) {
+  .events { font-size: 0; gap: 4px; padding: 8px 11px; }
+  .events b { font-size: 15px; }
+  .events small { font-size: 11px; }
+}
 @media (max-height: 460px) {
   .objective { top: calc(12px + var(--safe-t)); max-width: 44vw; font-size: 12px; }
   .pad { transform: scale(.86); transform-origin: right bottom; }
