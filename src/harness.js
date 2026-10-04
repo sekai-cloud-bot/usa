@@ -392,3 +392,234 @@ export function buildHarness(shape, d, off, color = 'pink') {
   }
   return g;
 }
+
+// ------------------------------------------------------------
+// いちごがらの バンダナ（首に くるっと まいて、三角を 胸の前に たらす。結び目は 右の首すじ）と、迷子札。
+// d: { W, H, L, c: 首の中心, ax: 首の向き(上・前) }、harness: いっしょに つける ハーネス（その上に かぶせる）
+// ------------------------------------------------------------
+const BANDANA = {
+  ichigo: { base: '#f7bccb', hem: '#e7869f', band: '#f2a9bb' },
+};
+/** いちごがら：ピンクの地に、赤い いちご（黄色い つぶ・緑の へた）と 白い小花 */
+function bandanaTexture(c) {
+  const t = canvasTex('bandana-' + c.base, 128, 128, (x, w, h) => {
+    x.fillStyle = c.base;
+    x.fillRect(0, 0, w, h);
+    // 布目
+    x.globalAlpha = 0.05;
+    x.fillStyle = '#7a2a3a';
+    for (let i = 0; i < w; i += 3) x.fillRect(i, 0, 1, h);
+    for (let i = 0; i < h; i += 3) x.fillRect(0, i, w, 1);
+    x.globalAlpha = 1;
+    const berry = (cx, cy, s, rot) => {
+      x.save();
+      x.translate(cx, cy); x.rotate(rot); x.scale(s, s);
+      x.fillStyle = '#e2334c';
+      x.beginPath();
+      x.moveTo(0, 13);
+      x.bezierCurveTo(-13, 4, -12, -9, -5, -9);
+      x.quadraticCurveTo(0, -10, 5, -9);
+      x.bezierCurveTo(12, -9, 13, 4, 0, 13);
+      x.fill();
+      x.fillStyle = 'rgba(255,255,255,0.35)';
+      x.beginPath(); x.ellipse(-4, -3, 2.2, 4, 0.3, 0, Math.PI * 2); x.fill();
+      x.fillStyle = '#ffe9a6';
+      for (const [px, py] of [[-4, 4], [3, 3], [0, -2], [-5, -4], [5, -4], [0, 8], [-1, 3]]) x.fillRect(px - 0.8, py - 1, 1.6, 2);
+      x.fillStyle = '#3f9a4a';
+      for (let i = 0; i < 5; i++) {
+        x.save(); x.translate(0, -9); x.rotate((i / 4 - 0.5) * 2.4);
+        x.beginPath(); x.ellipse(0, -3.5, 1.8, 4, 0, 0, Math.PI * 2); x.fill();
+        x.restore();
+      }
+      x.restore();
+    };
+    const flower = (cx, cy) => {
+      x.fillStyle = '#fffaf6';
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        x.beginPath(); x.arc(cx + Math.cos(a) * 3, cy + Math.sin(a) * 3, 2.4, 0, Math.PI * 2); x.fill();
+      }
+      x.fillStyle = '#f6c94a';
+      x.beginPath(); x.arc(cx, cy, 1.6, 0, Math.PI * 2); x.fill();
+    };
+    berry(32, 34, 1, -0.35);
+    berry(96, 98, 1, 0.3);
+    berry(98, 30, 0.9, 0.5);
+    berry(30, 96, 0.9, -0.15);
+    flower(64, 64); flower(4, 64); flower(124, 64); flower(64, 4); flower(64, 124);
+  }, true);
+  t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+const BM = {};
+function bandanaMats(c) {
+  if (BM[c.base]) return BM[c.base];
+  const map = bandanaTexture(c);
+  BM[c.base] = {
+    cloth: new THREE.MeshStandardMaterial({ map, emissiveMap: map, emissive: 0x262626, roughness: 0.86, side: THREE.DoubleSide, envMapIntensity: 0.5 }),
+    hem: new THREE.MeshStandardMaterial({ color: c.hem, roughness: 0.85, envMapIntensity: 0.5 }),
+    tag: new THREE.MeshStandardMaterial({ color: 0x2a2729, roughness: 0.35, envMapIntensity: 0.9 }),
+    ring: new THREE.MeshStandardMaterial({ color: 0xd8d6d4, roughness: 0.28, metalness: 1, envMapIntensity: 1.2 }),
+  };
+  for (const m of Object.values(BM[c.base])) m.userData.shared = true;
+  return BM[c.base];
+}
+
+export function buildBandana(shape, d, off, kind = 'ichigo', harness = null) {
+  const c = BANDANA[kind] || BANDANA.ichigo;
+  const m = bandanaMats(c);
+  const { W, H, L } = d;
+  const g = new THREE.Group();
+  g.name = 'bandana';
+  const tile = 0.045;                 // 模様 1まい分の大きさ
+  // ---- 首に まいた ところ（前が 少し さがる） ----
+  const el = Math.atan2(d.ax.y, d.ax.z) - 0.12;
+  const ax = V(0, Math.sin(el), Math.cos(el));
+  const e1 = V(1, 0, 0), e2 = new THREE.Vector3().crossVectors(ax, e1).normalize();
+  const bw = 0.0078, bt = 0.0036;
+  const band = ring(shape, d.c, e1, e2, 64, off + bt);
+  const bandGeo = strapGeometry(band.P, band.N, () => bw, bt, true);
+  const bandM = new THREE.Mesh(bandGeo, m.cloth);
+  bandM.castShadow = true;
+  g.add(bandM);
+  const nB = band.P.length;
+  const at = (a) => Math.round(((a / (Math.PI * 2)) % 1 + 1) % 1 * nB) % nB;
+  // 首の まわりの点（a: 角度）。下のふちから 少し上
+  const bandPt = (a) => {
+    const dir = e1.clone().multiplyScalar(Math.cos(a)).addScaledVector(e2, Math.sin(a));
+    return shape.surface(d.c, dir, 0.6).addScaledVector(ax, -bw * 0.5);
+  };
+
+  // ---- 三角：首の前から 胸へ たらす。体の面に そわせて、ハーネスの上では 浮かせる ----
+  const cB = V(0, -H * 0.05, L * 0.38);
+  const elT = -0.5;
+  const tip = shape.surface(cB, V(0, Math.sin(elT), Math.cos(elT)), 0.5);
+  const half = 1.42;                  // 首の前から 左右へ どこまで（角度）
+  const NA = 19, NB = 16;
+  const top = [];
+  for (let i = 0; i < NA; i++) top.push(bandPt(-Math.PI / 2 + ((i / (NA - 1)) * 2 - 1) * half));
+  let topLen = 0;
+  for (let i = 1; i < NA; i++) topLen += top[i].distanceTo(top[i - 1]);
+  const height = top[(NA - 1) >> 1].distanceTo(tip);
+  // 面の上の点と 法線
+  const base = [], nrm = [], lift = [];
+  for (let j = 0; j < NB; j++) {
+    const b = j / (NB - 1);
+    for (let i = 0; i < NA; i++) {
+      const a = (i / (NA - 1)) * 2 - 1;
+      // 上のふち（首）と 先（胸）の あいだ。左右は 下へいくほど せまく
+      const ii = (a * (1 - b) + 1) / 2 * (NA - 1);
+      const i0 = Math.floor(ii), f = ii - i0;
+      const p = top[i0].clone().lerp(top[Math.min(NA - 1, i0 + 1)], f).lerp(tip, b);
+      const S = shape.surface(cB, p.clone().sub(cB), 0.6);
+      base.push(S);
+      nrm.push(shape.normal(S));
+      lift.push(off + 0.0024 + 0.002 * b);
+    }
+  }
+  // ハーネスの ベルトや 胸あてが ある所は、その上まで 浮かせる（光線で さがす）
+  if (harness) {
+    harness.updateMatrixWorld(true);
+    // 外から 体へ むけて うつ（いちばん外がわの 面に あたる）
+    const R = 0.04, rc = new THREE.Raycaster();
+    rc.far = R;
+    base.forEach((S, k) => {
+      rc.set(S.clone().addScaledVector(nrm[k], R), nrm[k].clone().negate());
+      const h = rc.intersectObject(harness, true)[0];
+      if (h) lift[k] = Math.max(lift[k], R - h.distance + 0.0022);
+    });
+    // 布なので、まわりへ なめらかに（ふくらみを 少し広げてから ならす）
+    for (const op of ['max', 'avg', 'avg']) {
+      const L0 = lift.slice();
+      for (let j = 0; j < NB; j++) {
+        for (let i = 0; i < NA; i++) {
+          let acc = 0, n = 0;
+          for (let dj = -1; dj <= 1; dj++) {
+            for (let di = -1; di <= 1; di++) {
+              const jj = j + dj, ii = i + di;
+              if (jj < 0 || jj >= NB || ii < 0 || ii >= NA) continue;
+              const v = L0[jj * NA + ii];
+              if (op === 'max') acc = Math.max(acc, v); else { acc += v; n++; }
+            }
+          }
+          lift[j * NA + i] = op === 'max' ? acc : Math.max(L0[j * NA + i] * 0.85, acc / n);
+        }
+      }
+    }
+  }
+  const pos = [], uv = [], idx = [];
+  const grid = [];
+  for (let j = 0; j < NB; j++) {
+    const b = j / (NB - 1);
+    const row = [];
+    for (let i = 0; i < NA; i++) {
+      const a = (i / (NA - 1)) * 2 - 1, k = j * NA + i;
+      // 先のほうは 毛から少し はなれて ふわっと
+      const S = base[k].clone().addScaledVector(nrm[k], lift[k]).addScaledVector(V(0, -0.35, 1).normalize(), 0.004 * b * b);
+      row.push(S);
+      pos.push(S.x, S.y, S.z);
+      uv.push((a * (1 - b) * topLen * 0.5) / tile, -(b * height) / tile);
+    }
+    grid.push(row);
+  }
+  for (let j = 0; j < NB - 1; j++) {
+    for (let i = 0; i < NA - 1; i++) {
+      const a = j * NA + i, b2 = a + 1, cc = a + NA + 1, dd = a + NA;
+      idx.push(a, dd, cc, a, cc, b2);
+    }
+  }
+  const sheet = new THREE.BufferGeometry();
+  sheet.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  sheet.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  sheet.setIndex(idx);
+  sheet.computeVertexNormals();
+  const sm = new THREE.Mesh(sheet, m.cloth);
+  sm.castShadow = true;
+  g.add(sm);
+  // ふちの 縫い目（ななめの 2辺）
+  for (const i of [0, NA - 1]) {
+    const pts = grid.map((row) => row[i]);
+    const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), NB * 2, 0.0013, 5);
+    g.add(new THREE.Mesh(tube, m.hem));
+  }
+
+  // ---- 結び目：右の首すじ。小さな こぶと、ぴょこんと 出た 2つの はし ----
+  {
+    const i = at(Math.PI + 0.45);
+    const { T, U } = frameAt(band.P, band.N, i, true);
+    const p = band.P[i].clone().addScaledVector(U, bt * 0.8);
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), m.cloth);
+    knot.scale.set(0.0085, 0.007, 0.0085);
+    knot.position.copy(p);
+    knot.castShadow = true;
+    g.add(knot);
+    for (const [k, dn] of [[1, 0.9], [-1, 0.5]]) {
+      const flap = new THREE.Mesh(new THREE.ConeGeometry(0.008, 0.026, 4), m.cloth);
+      flap.scale.z = 0.35;
+      const dir = U.clone().multiplyScalar(0.55).addScaledVector(T, k * 0.7).addScaledVector(V(0, -1, 0), dn).normalize();
+      flap.quaternion.setFromUnitVectors(V(0, 1, 0), dir);
+      flap.position.copy(p).addScaledVector(dir, 0.013);
+      flap.castShadow = true;
+      g.add(flap);
+    }
+  }
+
+  // ---- 迷子札：首の前の 左がわに ぶらさげる ----
+  {
+    const i = at(-Math.PI / 2 + 0.55);
+    const { U } = frameAt(band.P, band.N, i, true);
+    const p = band.P[i].clone().addScaledVector(U, bt + 0.004);
+    const o = new THREE.Group();
+    o.position.copy(p);
+    o.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(V(0, 0, 0), U, V(0, 1, 0)));
+    const r = new THREE.Mesh(new THREE.TorusGeometry(0.0034, 0.0009, 6, 12), m.ring);
+    r.position.y = -0.003;
+    const tag = new THREE.Mesh(new THREE.CylinderGeometry(0.0085, 0.0085, 0.0022, 18), m.tag);
+    tag.rotation.x = Math.PI / 2;
+    tag.scale.set(1, 1, 1.15);
+    tag.position.y = -0.0135;
+    o.add(r, tag);
+    g.add(o);
+  }
+  return g;
+}

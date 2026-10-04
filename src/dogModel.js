@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clamp, lerp, mulberry32 } from './util.js';
 import { furMaterial, addFurShells, FUR } from './adv/look.js';
 import { Shape, meshShape, vnoise, sdCone, sdEll } from './sdf.js';
-import { buildHarness } from './harness.js';
+import { buildHarness, buildBandana } from './harness.js';
 
 // ------------------------------------------------------------
 // うちの子の見た目。犬種ではなく「タイプ（体つき）」を選んで、
@@ -109,7 +109,8 @@ export const TYPES = {
     def: { color: 'cream', pattern: 'solid', ear: 'tare', tail: 'thin', fluff: 0.06 },
   },
   // 公園の コロンちゃん（コーギーと柴犬のミックス）。うちの子えらびには出さない
-  // 柴より胴が長く 足は短め、大きな立ち耳、ふさふさの巻き尾、うらじろ、ピンクのハーネス
+  // 柴より胴が長く 足は短め、大きな立ち耳、ふさふさの巻き尾、顔の下半分から胸・前足が白い うらじろ、
+  // ピンクのハーネスと いちごがらの バンダナ
   koron: {
     label: 'コロン', sub: 'コーギー×柴', size: 1.08, hidden: true,
     L: 0.215, W: 0.098, H: 0.104, legH: 0.125, legR: 0.036, thigh: 1.2,
@@ -118,7 +119,7 @@ export const TYPES = {
     snout: 0.4, snW: 0.37, snH: 0.28, snY: -0.33,
     eye: 0.108, eyeX: 0.37, eyeY: 0.05, nose: 0.13, cheek: 0.85, chest: 0.65,
     earS: 1.3, tailS: 1.15, tailFat: 1.5, lump: 0.024, urajiro: true,
-    def: { color: 'red', coat: '#cc9058', pattern: 'mask', ear: 'pin', tail: 'curl', fluff: 0.32, harness: 'pink' },
+    def: { color: 'red', coat: '#d39d62', pattern: 'mask', ear: 'pin', tail: 'curl', fluff: 0.32, harness: 'pink', bandana: 'ichigo' },
   },
 };
 
@@ -211,8 +212,8 @@ function mats() {
   M.tongue = new THREE.MeshStandardMaterial({ color: 0xf0788a, roughness: 0.4, emissive: 0x6a1a24, emissiveIntensity: 0.2 });
   M.mouth = new THREE.MeshStandardMaterial({ color: 0x8a2c3a, roughness: 0.8, emissive: 0x3a0810, emissiveIntensity: 0.35, side: THREE.DoubleSide });
   M.innerEar = new THREE.MeshStandardMaterial({ color: 0xf0b0a8, roughness: 0.9, emissive: 0x6a2a20, emissiveIntensity: 0.14 });
-  // 柴の耳の中は、クリーム色の毛
-  M.innerEarFur = new THREE.MeshStandardMaterial({ color: 0xf3dcc0, roughness: 0.95, emissive: 0x6a4a30, emissiveIntensity: 0.12 });
+  // 柴の耳の中は、白っぽい毛
+  M.innerEarFur = new THREE.MeshStandardMaterial({ color: 0xfbf3ea, roughness: 0.95, emissive: 0x6a5a50, emissiveIntensity: 0.12 });
   for (const k in M) M[k].userData.shared = true;
   return M;
 }
@@ -343,8 +344,10 @@ export function buildDog(params0, opts = {}) {
     }
     let s = shade;
     if (T.urajiro) {
-      // うらじろ：わき腹は クリームに明るく、背中は少し こく、ももの うしろ（パンツ）と しっぽの下は白
-      w = Math.max(w, sstep(0.25, -0.6, yn) * 0.38);
+      // うらじろ：首の前から胸・おなかは まっ白、わき腹は クリームに明るく、背中は少し こく、ももの うしろ（パンツ）と しっぽの下は白
+      w = Math.max(w, sstep(0.25, -0.6, yn) * 0.42);
+      w = Math.max(w, sstep(-0.05, -0.4, yn - 1.7 * Math.max(0, zn - 0.1)) * (1 - 0.6 * sstep(W * 0.55, W * 0.95, Math.abs(x)) * sstep(-0.2, 0.3, yn)));
+      if (z > L * 0.45) w = Math.max(w, sstep(-W * 0.1, W * 0.35, z - L * 0.45 - Math.abs(x) * 0.5));
       s *= 1 - 0.1 * sstep(0.3, 0.95, yn);
       // うしろ足の もも の外がわは 毛の色のまま（おなかの白が もも まで広がらない）
       const thighOut = sstep(W * 0.2, W * 0.55, Math.abs(x)) * sstep(0.2, -0.3, zn) * sstep(-1.15, -0.55, yn);
@@ -361,7 +364,14 @@ export function buildDog(params0, opts = {}) {
   // ハーネス：毛の上に のせる（ベルトの内がわが 毛先に少し うもれるくらい）。胴ベルトは 前足の すぐ うしろ
   // きせかえ（おそろいハーネス）でも あとから作れるように、作り方を rig に のこす
   const makeHarness = (color) => buildHarness(torso, { W, H, L, zG: L * 0.55 - T.legR * 1.35 - W * 0.2 }, puff + lumpA * 0.9 + furLen * 0.4, color);
-  if (params.harness) body.add(makeHarness(params.harness));
+  const harness = params.harness ? makeHarness(params.harness) : null;
+  // バンダナ：首に まいて、三角を 胸の前に（ハーネスの上に かさねる）
+  if (params.bandana) {
+    const nA = V(...neckA), nB = V(...neckB);
+    const bd = { W, H, L, c: nA.clone().lerp(nB, 0.72), ax: nB.clone().sub(nA).normalize() };
+    body.add(buildBandana(torso, bd, puff + lumpA * 0.9 + furLen * 0.4, params.bandana, harness));
+  }
+  if (harness) body.add(harness);
 
   // ---- 頭 ----
   const neck = new THREE.Group();
@@ -447,6 +457,29 @@ export function buildDog(params0, opts = {}) {
           const d = Math.hypot(x - e.x * 0.9, y - (e.y + er * 1.9), z - e.z);
           w = Math.max(w, 1 - sstep(er * 0.45, er * 0.8, d));
         }
+      }
+      if (T.urajiro) {
+        // うらじろの顔：目から下（ほっぺ・マズル・あご）は まっ白。白は 鼻すじから 目がしらの横を とおって まゆまで ひとつながり。
+        // ひたいの毛の色は 逆三角（頭のてっぺんから、目のあいだへ 細くなる）。耳のうしろから首のうしろ、目じりの外も 毛の色
+        const ey = eyeC[0].y;
+        const yb = lerp(-hr * 0.55, ey - er * 0.2, sstep(-hr * 0.4, hr * 0.3, z));
+        let fw = sstep(yb + er * 0.8, yb - er * 0.5, y);
+        // 鼻すじ〜目のあいだ：上ほど はばが広い、角の丸い形
+        const hw = er * (1.4 + 0.55 * clamp((y - ey) / er, 0, 2)), rr = er * 0.6;
+        const dx = Math.abs(x) - (hw - rr), dy = y - (ey + er * 1.75 - rr);
+        const db = Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) + Math.min(Math.max(dx, dy), 0) - rr;
+        fw = Math.max(fw, sstep(hr * 0.35, hr * 0.7, z) * (1 - sstep(-er * 0.25, er * 0.3, db)));
+        for (const e of eyeC) {
+          // 目のまわり
+          fw = Math.max(fw, 1 - sstep(er * 1.25, er * 1.6, Math.hypot(x - e.x, (y - e.y) * 1.15, z - e.z)));
+          // まろまゆ（大きめ）
+          fw = Math.max(fw, 1 - sstep(er * 0.85, er * 1.2, Math.hypot((x - e.x * 0.82) * 1.1, y - (e.y + er * 1.8), z - e.z)));
+        }
+        // ひたいの 逆三角（先は 目がしらの高さ）
+        const yTip = ey - er * 0.2;
+        const hwV = (y - yTip) * 0.62;
+        fw = Math.min(fw, 1 - sstep(hwV + er * 0.3, hwV - er * 0.2, Math.abs(x)) * sstep(yTip, yTip + er * 0.7, y));
+        w = Math.max(w, fw);
       }
     } else if (pat === 'buchi') {
       // 白い顔に、片目のまわりだけ ぶち
@@ -578,11 +611,12 @@ export function buildDog(params0, opts = {}) {
   const ears = [];
   const earType = params.ear || 'pin';
   const eS = T.earS;
-  const earTint = (geo) => paint(geo, coat, white, (x, y, z) => ({ w: pat === 'buchi' ? 0 : under * 0.3, s: (dark ? 0.94 : 0.96) * ao(x, y, z) }));
+  // inner(x, y, z): 耳の内がわの白さ（うらじろの立ち耳）
+  const earTint = (geo, inner) => paint(geo, coat, white, (x, y, z) => ({ w: pat === 'buchi' ? 0 : Math.max(under * 0.3, inner ? inner(x, y, z) : 0), s: (dark ? 0.94 : 0.96) * ao(x, y, z) }));
   for (const s of [-1, 1]) {
     const ear = new THREE.Group();
     const es = new Shape();
-    let bounds, innerE = null;
+    let bounds, innerE = null, inner = null;
     if (earType === 'pin' || earType === 'big') {
       // 立ち耳：まるみのある三角。前がわは少し くぼむ
       const big = earType === 'big';
@@ -596,6 +630,11 @@ export function buildDog(params0, opts = {}) {
       innerE = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), T.urajiro ? m.innerEarFur : m.innerEar);
       innerE.scale.set(eb * 0.56, eh * 0.42, eb * 0.06);
       innerE.position.set(0, eh * 0.36, eb * th * 0.28);
+      // うらじろの子は、耳の中（くぼみ）が 白い毛。ふちは 毛の色のまま
+      if (T.urajiro) {
+        innerE.scale.set(eb * 0.6, eh * 0.46, eb * 0.07);
+        inner = (x, y, z) => (1 - sstep(eb * 0.04, eb * 0.14, sdEll(x, y - eh * 0.4, z - eb * th * 1.05, eb * 0.64, eh * 0.5, eb * th * 0.75))) * sstep(-eh * 0.02, eh * 0.12, y);
+      }
     } else if (earType === 'fuwa') {
       // ふわふわの たれ耳：頭の横に ふっくら（頭の毛と ひとつづきに見えるように、つけ根は頭の中）
       const A = hs.surface(V(0, 0, 0), V(s * 0.86, 0.24, -0.14), hr * 2);
@@ -643,7 +682,7 @@ export function buildDog(params0, opts = {}) {
     if (lumpA > 0 || puff > 0) es.displace(fluffDisp(earType === 'fuwa' ? null : () => 0.5), dispMax);
     const hE = 0.0056 * q * clamp(hr / 0.12, 0.8, 1.2);
     const eg = mesh(es, bounds[0], bounds[1], hE, dispMax + hE * 2);
-    earTint(eg);
+    earTint(eg, inner);
     const em = new THREE.Mesh(eg, m.fur);
     em.castShadow = true;
     ear.add(em);
@@ -731,9 +770,9 @@ export function buildDog(params0, opts = {}) {
         // 白い胸から出る前足は、つけ根も白く（胸とのさかいに色の島ができない）
         if ((pat === 'belly' || pat === 'mask') && front) w = Math.max(w, sstep(0.34, 0.12, t));
         if (pat === 'buchi') w = 1 - buchi(x + (front ? 0.3 : -0.3), y + 2, z + (front ? 0.5 : -0.5), 2.3 / W) * (1 - t);
-        // うらじろ：足は ひざから下が白、前足は前がわも白っぽい
+        // うらじろ：前足は まっ白（つけ根だけ ほんのり）、うしろ足は ひざから下が白
         // （うしろ足の上のほうは 胴の横から見えるので、毛の色のまま）
-        if (T.urajiro) w = Math.max(w, front ? sstep(0.3, 0.5, t) : sstep(0.5, 0.68, t), front ? sstep(-legR * 0.2, legR * 0.8, z) * 0.7 : 0);
+        if (T.urajiro) w = Math.max(w, front ? Math.max(0.75, sstep(0.12, 0.3, t)) : sstep(0.5, 0.68, t));
         return { w, s: (1 - 0.05 * t) * ao(x, y, z) };
       });
       legGeos[key] = g;
