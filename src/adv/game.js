@@ -5,6 +5,7 @@ import { Z, DIG, SCENT, ROAD, TRACK } from './town.js';
 import { RIVER, SHRINE } from './town2.js';
 import { EventDirector, EVENTS, FRIEND_IDS, KINDS } from './events.js';
 import { installHappenings } from './happen.js';
+import { track } from '../track.js';
 import { Party } from './party.js';
 import { Treasures } from './treasure.js';
 import { pickTitle, TITLES } from './titles.js';
@@ -559,6 +560,7 @@ export class Game {
         this.area = id;
         if (a && !F['area-' + a.id]) {
           F['area-' + a.id] = true;
+          track('area_enter', { area: a.id, area_name: a.name, hour: Math.round(this.hour * 100) / 100 });
           ui.area(a.name, a.sub);
           this.onArea(a.id);
         }

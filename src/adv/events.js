@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from '../util.js';
 import { audio } from '../audio.js';
+import { track } from '../track.js';
 
 // ------------------------------------------------------------
 // できごと（寄り道・ともだち・見つけた物・けしき）の一覧と、町の中の目じるし
@@ -251,6 +252,7 @@ export class EventDirector {
       if (url) this.memories.push({ id, url, title: e.title, kind: e.kind });
     };
     audio.play(e.kind === 'friend' ? 'fanfare' : e.kind === 'view' ? 'memory' : 'sparkle');
+    track('event_done', { event_id: id, event_title: e.title, event_kind: e.kind, area: e.area, count: this.done.size, first_time: isNew ? 1 : 0 });
     if (photo) g.requestPhoto((url) => card(url), wait);
     else card(null);
     g.ui.events(this.done.size, this.total);

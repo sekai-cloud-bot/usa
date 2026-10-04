@@ -297,6 +297,7 @@ body.late .clock-pill .sun { background: radial-gradient(circle at 40% 38%, #ffd
 .r-party, .r-treasure { font-size: 12px; font-weight: 800; color: var(--accent); text-align: center; width: 100%; }
 .r-treasure { color: #a8742e; }
 .help b { color: var(--accent); margin-right: 4px; }
+.help .ga-note { margin-top: 6px; font-size: 9.5px; font-weight: 500; opacity: .55; line-height: 1.5; }
 .share-img { width: 100%; border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
 
 /* ---------- 結果 ---------- */

@@ -18,6 +18,7 @@ import { loadSave, save, getSave } from './save.js';
 import { shareDiary, fmtHour } from './share.js';
 import { TYPES, SIZES, PATTERNS, EARS, TAILS, COLORS, typeParams, normalizeDogParams, colorHex } from '../dogModel.js';
 import { audio } from '../audio.js';
+import { track } from '../track.js';
 import { isTouchDevice, clamp, damp, smooth, angleDiff } from '../util.js';
 import { BED, TABLE, ROOM } from '../room.js';
 
@@ -403,7 +404,14 @@ function enterTitle() {
   soundLabel();
 }
 
+// 解析用：遊びはじめた時刻（秒数を 送る）
+let playT0 = 0;
+const playSec = () => (playT0 ? Math.round((performance.now() - playT0) / 1000) : 0);
+const progress = () => ({ play_seconds: playSec(), events: game.ev ? game.ev.done.size : 0, area: game.area || '' });
+
 function startGame() {
+  playT0 = performance.now();
+  track('game_start', { dog_type: dogParams.type, clears: getSave().clears || 0, touch: touch ? 1 : 0 });
   fadeEl.style.transition = '';
   audio.unlock();
   audio.setEnabled(data.settings.sound);
@@ -425,11 +433,18 @@ $('btn-start').addEventListener('click', () => { audio.unlock(); audio.play('ok'
 // 音が止まっている時（別のアプリやタブから戻った時など）は、タップの案内。タップで 音を もどす
 audio.onNeedTap = (on) => $('sound-tap').classList.toggle('show', on);
 $('sound-tap').addEventListener('click', () => audio.tap());
+// 解析：音の案内が出た（1回の あそびで 1回だけ）
+{
+  const show = audio.onNeedTap;
+  let sent = false;
+  audio.onNeedTap = (on) => { show(on); if (on && !sent && mode === 'play') { sent = true; track('sound_hint'); } };
+}
 // 動いているのに 音が出ない時も、ここで 作りなおせる（オフなら オンにもどす）
 $('btn-sound-fix').addEventListener('click', () => {
   if (!data.settings.sound) { data.settings.sound = true; audio.setEnabled(true); soundLabel(); save(); }
   audio.repair();
   audio.play('ok');
+  track('sound_repair');
 });
 $('btn-sound').addEventListener('click', () => { data.settings.sound = !data.settings.sound; audio.unlock(); audio.setEnabled(data.settings.sound); soundLabel(); save(); });
 $('btn-sound2').addEventListener('click', () => { data.settings.sound = !data.settings.sound; audio.setEnabled(data.settings.sound); soundLabel(); save(); });
@@ -548,6 +563,7 @@ $('btn-custom').addEventListener('click', () => {
 $('btn-custom-ok').addEventListener('click', () => {
   audio.play('ok');
   dogParams.name = ($('in-name').value || '').trim() || 'うさ';
+  track('dog_custom', { dog_type: dogParams.type });
   data.dog = dogParams;
   save();
   titleHour = 17.45;
@@ -703,8 +719,11 @@ $('btn-quality').addEventListener('click', () => {
   $('quality-state').textContent = QUALITY[qSetting];
 });
 const reload = (auto) => {
+  const sent = mode === 'play' && typeof window.gtag === 'function';
+  if (mode === 'play') track(auto ? 'game_restart' : 'game_quit', { ...progress(), transport_type: 'beacon' });
   try { if (auto) sessionStorage.setItem('omukae-autostart', '1'); } catch (e) { /* noop */ }
-  location.reload();
+  // 解析の 送信が 読みこみなおしで 切れないように、少しだけ待つ
+  setTimeout(() => location.reload(), sent ? 250 : 0);
 };
 $('btn-restart').addEventListener('click', () => reload(true));
 $('btn-quit').addEventListener('click', () => reload(false));
@@ -717,6 +736,11 @@ addEventListener('keydown', (e) => {
 // ------------------------------------------------------------
 let lastResult = null;
 game.onFinish = (r) => {
+  track('game_clear', {
+    play_seconds: playSec(), arrive: fmtHour(r.arrive), late: r.late ? 1 : 0, events: r.events.length, gift: r.gift,
+    party: r.party.length, with_koron: r.party.includes('コロンちゃん') ? 1 : 0, clears: r.clears, title: r.title ? r.title.id : '',
+  });
+  playT0 = 0;
   save();
   mode = 'result';
   lastResult = r;
@@ -776,8 +800,10 @@ function showResult(r) {
   show('screen-result');
   ui.hud(false);
 }
-$('btn-share').addEventListener('click', () => { audio.play('ui'); shareDiary(lastResult, 'share'); });
-$('btn-save').addEventListener('click', () => { audio.play('ui'); shareDiary(lastResult, 'save'); });
+$('btn-share').addEventListener('click', () => { audio.play('ui'); track('diary_share'); shareDiary(lastResult, 'share'); });
+$('btn-save').addEventListener('click', () => { audio.play('ui'); track('diary_save'); shareDiary(lastResult, 'save'); });
+// 解析：遊んでいる途中で ページを とじた（どこまで 進んだか）
+addEventListener('pagehide', () => { if (mode === 'play' && playT0) track('play_leave', { ...progress(), transport_type: 'beacon' }); });
 $('btn-again').addEventListener('click', () => reload(true));
 $('btn-title').addEventListener('click', () => reload(false));
 $('btn-share-close').addEventListener('click', () => $('share-modal').classList.add('hidden'));

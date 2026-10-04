@@ -6,6 +6,19 @@
 <meta name="theme-color" content="#f0b98a">
 <meta name="description" content="おるすばん中の犬が、夕方の町をぬけて駅まで飼い主をむかえにいく3Dアドベンチャー。">
 <title>駅まで、おむかえ。</title>
+<script>
+  // アクセス解析（Google アナリティクス）：遊んでくれた人数・時間・どこまで進んだか。手元で動かす時は 送らない
+  if (!/^(localhost|127\.|10\.|192\.168\.)/.test(location.hostname)) {
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { dataLayer.push(arguments); };
+    gtag('js', new Date());
+    gtag('config', 'G-D99NJDVDKZ', { allow_google_signals: false, allow_ad_personalization_signals: false });
+    var ga = document.createElement('script');
+    ga.async = true;
+    ga.src = 'https://www.googletagmanager.com/gtag/js?id=G-D99NJDVDKZ';
+    document.head.appendChild(ga);
+  }
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&family=Kiwi+Maru:wght@400;500&display=swap" media="print" onload="this.media='all'">
@@ -150,6 +163,7 @@
           <div><b>スマホ</b> 左をなぞって移動（大きく倒すと走る）・右をなぞってカメラ・右下のボタン</div>
           <div><b>ヒント</b> 光る印は「できごと」。くんくんすると、遠くの印も光の柱になって見える</div>
           <div><b>おたから</b> くんくんすると、近くの「あやしいにおい」が見える。そこで ほる（長押し）</div>
+          <div class="ga-note">遊んでくれた人の数などを知るため、Google アナリティクスを使っています（名前などは送りません）</div>
         </div>
       </div>
     </div>
