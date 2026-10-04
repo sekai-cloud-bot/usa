@@ -755,34 +755,35 @@ function park(g) {
     if (id === 'park') g.run(function* () { yield 3; if (!g.ev.isDone('kid')) g.say(kid, 'ボール、どこいっちゃったんだろう…', 2.6); }());
   });
 
-  // 柴犬のこむぎ（ワンで、おいかけっこ）
-  const shiba = new Dog(scene);
-  shiba.setParams(typeParams('sura', 'こむぎ', { color: 'red', pattern: 'mask', fluff: 0.3, size: 's' }));
-  shiba.place(60.3, -66.6, Math.PI + 0.3);
-  shiba.setPose('sit');
-  g.shiba = shiba;
-  g.solidDogs = [shiba];
+  // コロンちゃん（コーギーと柴犬のミックス。ピンクのハーネス）。ワンで、おいかけっこ
+  // （できごとの id 'shiba' と なかまの id 'komugi' は、保存データのため そのまま）
+  const koron = new Dog(scene);
+  koron.setParams(typeParams('koron', 'コロン'));
+  koron.place(60.3, -66.6, Math.PI + 0.3);
+  koron.setPose('sit');
+  g.koron = koron;
+  g.solidDogs = [koron];
   // escaped: 一度ちゃんと逃げきったか（となりで「ワン」した瞬間に つかまえて終わらないように）
   let st = 'sit', tagT = 0, escaped = false;
   const adapter = { resolveDog: (d) => { d.pos.y = 0; g.town.col.resolve(d.pos, d.radius, 0.5, 0.3); } };
-  g.ev.pos('shiba', () => _a.copy(shiba.pos).setY(0.95));
-  // つかまえると、こむぎは 駅まで いっしょに来てくれる（なかま）
-  const komugi = new DogFollower(g, shiba, { id: 'komugi', name: 'こむぎ', gap: 1.2, order: 2 });
-  komugi.onJoin = () => g.ui.toast('こむぎが なかまに なった！ 駅まで いっしょ', 'heart');
+  g.ev.pos('shiba', () => _a.copy(koron.pos).setY(0.95));
+  // つかまえると、コロンちゃんは 駅まで いっしょに来てくれる（なかま）
+  const koronF = new DogFollower(g, koron, { id: 'komugi', name: 'コロンちゃん', gap: 1.2, order: 2 });
+  koronF.onJoin = () => g.ui.toast('コロンちゃんが なかまに なった！ 駅まで いっしょ', 'heart');
   function* startTag() {
     st = 'bow';
-    shiba.setPose('bow');
-    shiba.bark(1.25);
-    g.sayAt(shiba.pos, 'わんっ！（おいかけっこ！）', 1.6);
+    koron.setPose('bow');
+    koron.bark(1.25);
+    g.sayAt(koron.pos, 'わんっ！（おいかけっこ！）', 1.6);
     yield 0.9;
     st = 'run';
-    shiba.setPose('stand');
+    koron.setPose('stand');
     tagT = 0;
     escaped = false;
-    g.ui.objective('こむぎを つかまえろ！');
+    g.ui.objective('コロンちゃんを つかまえろ！');
   }
   g.on('bark', (dp) => {
-    if (shiba.pos.distanceTo(dp) < 4.5 && st === 'sit' && !g.ev.isDone('shiba')) { g.run(startTag()); return true; }
+    if (koron.pos.distanceTo(dp) < 4.5 && st === 'sit' && !g.ev.isDone('shiba')) { g.run(startTag()); return true; }
     return false;
   });
   g.on('update', (dt) => {
@@ -791,48 +792,48 @@ function park(g) {
     const mv = _h.set(0, 0, 0);
     if (st === 'run') {
       tagT += dt;
-      const dx = shiba.pos.x - dp.x, dz = shiba.pos.z - dp.z, dd = Math.hypot(dx, dz);
-      const cx = 55 - shiba.pos.x, cz = -64 - shiba.pos.z;
+      const dx = koron.pos.x - dp.x, dz = koron.pos.z - dp.z, dd = Math.hypot(dx, dz);
+      const cx = 55 - koron.pos.x, cz = -64 - koron.pos.z;
       mv.set(dx / (dd + 0.01) + cx * 0.04 + Math.sin(g.t * 1.7) * 0.5, 0, dz / (dd + 0.01) + cz * 0.04 + Math.cos(g.t * 1.3) * 0.5);
       if (mv.length() > 1) mv.normalize();
       // 走り出しは、ぴょんと はなれる
-      shiba.speedMul = tagT < 1.2 ? 1.8 : dd < 3 ? 1.6 : 1.1;
+      koron.speedMul = tagT < 1.2 ? 1.8 : dd < 3 ? 1.6 : 1.1;
       if (dd > 1.8) escaped = true;
-      if (Math.random() < dt * 1.5) g.puff(shiba.pos, 1, 0xc9b79a);
+      if (Math.random() < dt * 1.5) g.puff(koron.pos, 1, 0xc9b79a);
       // 隅に追いこまれて逃げられないときは、少したてば つかまえられる
       if (dd < 0.75 && (escaped || tagT > 3.5)) {
         st = 'caught';
-        shiba.setPose('belly');
-        shiba.setExpr('happy');
-        shiba.bark(1.3);
-        g.hearts(shiba.pos.clone().add(V(0, 0.5, 0)), 6);
+        koron.setPose('belly');
+        koron.setExpr('happy');
+        koron.bark(1.3);
+        g.hearts(koron.pos.clone().add(V(0, 0.5, 0)), 6);
         g.ui.objective('においをたどって 駅へ');
-        g.ev.complete('shiba', 'おいかけっこで、こむぎを つかまえた');
+        g.ev.complete('shiba', 'おいかけっこで、コロンちゃんを つかまえた');
         g.run(function* () {
           yield 2.4;
-          shiba.setPose('stand');
+          koron.setPose('stand');
           yield 0.5;
           if (g.flags.arrival) { st = 'home'; return; }
-          shiba.bark(1.3);
-          shiba.setExpr('happy');
-          g.sayAt(shiba.pos.clone().add(V(0, 0.65, 0)), 'わんっ！（駅まで いっしょに 行く！）', 2.4);
+          koron.bark(1.3);
+          koron.setExpr('happy');
+          g.sayAt(koron.pos.clone().add(V(0, 0.65, 0)), 'わんっ！（駅まで いっしょに 行く！）', 2.4);
           st = 'party';
-          g.party.join(komugi);
+          g.party.join(koronF);
           yield 1.6;
-          g.say(g.oldman, 'おや、こむぎ。おともかい？ 気をつけて 行っておいで', 2.8);
+          g.say(g.oldman, 'おや、コロン。おともかい？ 気をつけて 行っておいで', 2.8);
         }());
       } else if (tagT > 25) {
         st = 'home';
         g.ui.objective('においをたどって 駅へ');
-        g.sayAt(shiba.pos, 'わふ（またね）', 1.6);
+        g.sayAt(koron.pos, 'わふ（またね）', 1.6);
       }
     } else if (st === 'home') {
-      const hx = 60.3 - shiba.pos.x, hz = -66.6 - shiba.pos.z, hd = Math.hypot(hx, hz);
+      const hx = 60.3 - koron.pos.x, hz = -66.6 - koron.pos.z, hd = Math.hypot(hx, hz);
       if (hd > 0.3) mv.set(hx / hd, 0, hz / hd).multiplyScalar(Math.min(1, hd));
-      else { st = 'sit'; shiba.setPose('sit'); shiba.heading = Math.PI + 0.3; }
-      shiba.speedMul = 1;
-    } else if (shiba.pos.distanceTo(dp) < 5) { shiba.lookAt = dp.clone().setY(0.4); shiba.lookHold = 0.3; shiba.excite = 0.9; }
-    shiba.update(dt, mv, adapter);
+      else { st = 'sit'; koron.setPose('sit'); koron.heading = Math.PI + 0.3; }
+      koron.speedMul = 1;
+    } else if (koron.pos.distanceTo(dp) < 5) { koron.lookAt = dp.clone().setY(0.4); koron.lookHold = 0.3; koron.excite = 0.9; }
+    koron.update(dt, mv, adapter);
   });
 
   // すべり台

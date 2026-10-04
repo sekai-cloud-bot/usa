@@ -35,7 +35,7 @@ export const EVENTS = [
   { id: 'gacha', kind: 'friend', area: 'street', title: 'ガチャの男の子', hint: '100円が たりなくて、こまっているみたい' },
   { id: 'duckling', kind: 'friend', area: 'street', title: 'まいごの カルガモ', hint: 'ピヨピヨ…まいごの ひな。そっと近づいて おすわり' },
   { id: 'kid', kind: 'friend', area: 'park', title: 'ボールの男の子', hint: 'ボールをさがしている。茂みのあたりを くんくん' },
-  { id: 'shiba', kind: 'friend', area: 'park', title: '柴犬のこむぎ', hint: '柴犬に「ワン」と あいさつしてみよう' },
+  { id: 'shiba', kind: 'friend', area: 'park', title: 'コロンちゃん', hint: 'ピンクのハーネスの わんちゃんに「ワン」と あいさつしてみよう' },
   { id: 'slide', kind: 'play', area: 'park', title: 'すべり台', hint: '階段をのぼって、すべってみよう' },
   { id: 'sakura', kind: 'play', area: 'park', title: '桜ふぶき', hint: '大きな桜の木。体あたりしてみよう' },
   { id: 'ducks', kind: 'play', area: 'park', title: '池のカモ', hint: '池のカモに「ワン」' },

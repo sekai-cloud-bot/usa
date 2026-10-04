@@ -5,6 +5,6 @@ export default defineConfig({
   base: './',
   build: {
     target: 'es2020',
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 1300,
   },
 });
