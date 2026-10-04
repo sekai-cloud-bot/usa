@@ -1203,7 +1203,7 @@ export class Game {
     const P = this.party, n = P.size, lines = [];
     if (!n) return lines;
     if (n >= 2) lines.push('…えっ、みんなで むかえに来てくれたの！？');
-    if (P.has('komugi')) lines.push(n >= 2 ? 'こむぎちゃんまで…！ あとで おじいさんの所に 送っていこうね' : 'あれ、こむぎちゃん？ いっしょに来てくれたの？');
+    if (P.has('komugi')) lines.push(n >= 2 ? 'コロンちゃんまで…！ あとで おじいさんの所に 送っていこうね' : 'あれ、コロンちゃん？ いっしょに来てくれたの？');
     if (P.has('mike')) lines.push('ねこさんも いっしょ？ ふふ、なかよしに なったんだね');
     if (P.has('chick')) lines.push('カルガモの赤ちゃん…！？ 帰りに、池の お母さんの所へ つれていこうね');
     if (P.has('poppo')) lines.push('…ところで、あたまの上の子は どなた？');

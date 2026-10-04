@@ -432,6 +432,7 @@ function buildCustom() {
   const tw = $('opt-type');
   tw.innerHTML = '';
   for (const [id, t] of Object.entries(TYPES)) {
+    if (t.hidden) continue;   // 町の子だけの体つき
     const c = document.createElement('button');
     c.className = 'chip' + (dogParams.type === id ? ' on' : '');
     const b = document.createElement('b');

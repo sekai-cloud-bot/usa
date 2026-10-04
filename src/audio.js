@@ -99,8 +99,26 @@ export class Audio {
       this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
       const d = this.noise.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      this._watch();
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    this._resume();
+  }
+
+  _resume() {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state === 'running' || ctx.state === 'closed' || document.hidden) return;
+    ctx.resume().catch(() => {});
+  }
+  // 別のタブやアプリへ行くとブラウザが音を止めるので、戻ってきたら鳴らし直す
+  _watch() {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this._resume();
+      else if (this.ctx.state === 'running') this.ctx.suspend().catch(() => {});
+    });
+    addEventListener('pageshow', () => this._resume());
+    addEventListener('focus', () => this._resume());
+    // iOS などは、画面にふれたときでないと鳴らし直せないことがある
+    for (const ev of ['pointerdown', 'touchend', 'keydown']) addEventListener(ev, () => this._resume(), { capture: true, passive: true });
   }
 
   setEnabled(on) {
@@ -468,6 +486,8 @@ export class Audio {
     const tick = () => {
       if (!this.bgmOn) return;
       const spb = 60 / 84 / 2; // 8分音符
+      // 止まっていた間の音を、まとめて鳴らさない
+      if (this.bgmNext < this.ctx.currentTime) this.bgmNext = this.ctx.currentTime + 0.05;
       while (this.bgmNext < this.ctx.currentTime + 0.25) {
         this._bgmNote(this.bgmStep, this.bgmNext);
         this.bgmStep = (this.bgmStep + 1) % MELODY.length;

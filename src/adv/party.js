@@ -239,7 +239,7 @@ export class Party {
 // drive(dt, target, { sitting, idle, face, speed }) で、道の上の点へ
 // ------------------------------------------------------------
 
-/** 犬の友だち（柴犬のこむぎ）。Dog をそのまま動かす */
+/** 犬の友だち（コロンちゃん）。Dog をそのまま動かす */
 export class DogFollower {
   constructor(g, dog, { id, name, gap = 1.2, order = 2 } = {}) {
     Object.assign(this, { g, dog, id, name, gap, order });
@@ -283,7 +283,7 @@ export class DogFollower {
   react(kind) {
     if (kind !== 'bark' || !this.party) return;
     const d = this.dog, g = this.g;
-    // ワンと言うと、こむぎも ワン
+    // ワンと言うと、コロンちゃんも ワン
     g.run(function* () { yield 0.32; d.bark(1.32); }());
   }
 }
