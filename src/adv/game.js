@@ -260,7 +260,7 @@ export class Game {
     this.run(this.prologue());
   }
 
-  /** その場所（head / face / neck）に つける きせかえ。決めていなければ、いちばん新しく もらった物 */
+  /** その場所（head / face / neck / body）に つける きせかえ。決めていなければ、いちばん新しく もらった物 */
   wearChoice(slot) {
     const s = this.save, have = s.wear || [];
     const on = s.wearOn || (s.wearOn = {});
@@ -286,10 +286,13 @@ export class Game {
       const old = rig.root.getObjectByName('wear-' + k);
       if (old) { old.parent.remove(old); disposeObject(old); }
     }
-    const w = makeWear(kind, kind === 'glasses' ? glassesFit(rig) : null);
+    // 体の きせかえ（ハーネス）は、その子の体の形に合わせて作る
+    const w = info.slot === 'body' ? rig.makeHarness(info.color) : makeWear(kind, kind === 'glasses' ? glassesFit(rig) : null);
     w.name = 'wear-' + kind;
     const d = rig.dims;
-    if (info.slot === 'neck') {
+    if (info.slot === 'body') {
+      rig.body.add(w);
+    } else if (info.slot === 'neck') {
       // 首のつけ根に（首輪の輪の半径は 0.14）
       const c = d.collar;
       w.position.set(0, c.y - (kind === 'bell' ? c.r * 0.1 : 0), c.z);
@@ -1173,6 +1176,23 @@ export class Game {
     for (const line of this.partyLines()) {
       this.say(O, line, 2.8);
       yield 3.0;
+    }
+    // コロンちゃんと いっしょなら：あの人の おみやげの ハーネスが、コロンちゃんと おそろい
+    if (party.has('komugi')) {
+      if (!(this.save.wear || []).includes('harness')) {
+        this.say(O, 'じつはね、おみやげに ハーネスを 買ってきたんだ。…あれ？ コロンちゃんと おそろいだ！', 3.4);
+        yield 2.0;
+        this.wear('harness');
+        this.unlockWear('harness');
+        audio.play('fanfare');
+        this.confetti(p.pos.clone().add(V(0, 0.7, 0)), 30);
+        const info = WEAR.harness;
+        ui.memory({ icon: info.icon, kind: 'reward', kindLabel: 'きせかえ', color: '#d8246f', title: info.label, line: 'あの人の おみやげは、コロンちゃんと おそろいの ピンクのハーネス', isNew: true, count: 'きせかえは「うちの子をえらぶ」で かえられる' });
+        yield 2.4;
+      } else if (this.wearChoice('body') === 'harness') {
+        this.say(O, 'コロンちゃんと おそろいの ハーネス、ならぶと きょうだいみたい！', 2.8);
+        yield 3.0;
+      }
     }
     if (gift !== 'none') {
       this.say(O, 'これ、くれるの？', 1.8);

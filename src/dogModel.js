@@ -357,11 +357,10 @@ export function buildDog(params0, opts = {}) {
   torsoMesh.receiveShadow = true;
   shell(torsoMesh);
   body.add(torsoMesh);
-  // ハーネス：毛の上に のせる（ベルトの内がわが 毛先に少し うもれるくらい）
-  if (params.harness) {
-    const zG = L * 0.55 - T.legR * 1.35 - W * 0.2;   // 前足の すぐ うしろ
-    body.add(buildHarness(torso, { W, H, L, zG }, puff + lumpA * 0.9 + furLen * 0.4, params.harness));
-  }
+  // ハーネス：毛の上に のせる（ベルトの内がわが 毛先に少し うもれるくらい）。胴ベルトは 前足の すぐ うしろ
+  // きせかえ（おそろいハーネス）でも あとから作れるように、作り方を rig に のこす
+  const makeHarness = (color) => buildHarness(torso, { W, H, L, zG: L * 0.55 - T.legR * 1.35 - W * 0.2 }, puff + lumpA * 0.9 + furLen * 0.4, color);
+  if (params.harness) body.add(makeHarness(params.harness));
 
   // ---- 頭 ----
   const neck = new THREE.Group();
@@ -768,7 +767,7 @@ export function buildDog(params0, opts = {}) {
   const collar = { y: cA.y, z: cA.z + T.neck * 0.1, r: T.neck * 0.95 + puff + lumpA };
   const crown = { y: hr * 0.94 + puff + lumpA * 0.5 + (T.topknot && F > 0.4 ? hr * 0.12 : 0), z: -hr * 0.08, r: hr * 0.62 };
   return {
-    root, body, neck, head, headMesh, eyes, nose, tongue, blush, mouth, mouthOpen, mouthLine, ears, tail, legs, blob,
+    root, body, neck, head, headMesh, eyes, nose, tongue, blush, mouth, mouthOpen, mouthLine, ears, tail, legs, blob, makeHarness,
     dims: {
       scale, legLen: T.legH, legModel, bodyY, bodyLen: rz * 1.6, bodyR: ry, rx, ry, rz, headR: hr, top,
       sitY, sitPitch, lieY: ry * 0.97, earType, tailType, collar, crown,

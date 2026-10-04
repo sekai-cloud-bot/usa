@@ -1107,8 +1107,10 @@ export const WEAR = {
   bandana: { slot: 'neck', label: '赤いバンダナ', icon: '🧣', how: 'カラスと こうかん' },
   bell: { slot: 'neck', label: '金のすず', icon: '🔔', how: '福引きで 大当たり' },
   bowtie: { slot: 'neck', label: 'ちょうネクタイ', icon: '🎀', how: 'たから 15こ' },
+  // 体に つける：犬の体の形から その子に合わせて作る（src/harness.js）
+  harness: { slot: 'body', label: 'おそろいハーネス', icon: '💗', how: 'コロンちゃんと 駅へ', color: 'pink' },
 };
-export const WEAR_SLOTS = ['head', 'face', 'neck'];
+export const WEAR_SLOTS = ['head', 'face', 'neck', 'body'];
 
 /** まるメガネを、その子の目の位置に合わせる（rig から） */
 export function glassesFit(rig) {

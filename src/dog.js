@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildDog, fitLeg } from './dogModel.js';
-import { clamp, damp, dampAngle, lerp, rand, disposeObject } from './util.js';
+import { clamp, damp, dampAngle, lerp, rand, smooth, disposeObject } from './util.js';
 import { audio } from './audio.js';
 
 const _v = new THREE.Vector3();
@@ -56,6 +56,10 @@ export class Dog {
     this.dig = 0;
     this.air = 0;         // 空中姿勢（冒険版のジャンプ）
     this.extraPitch = 0;
+    this.rollT = -1;      // ころん（横に一回転）の進行。-1: していない
+    this.rollHold = 0.5;  // ころんの とちゅうで、へそ天のまま いる時間
+    this.rollStep = 0;
+    this.wiggle = 0;      // おしりふりふり（コーギーゆずり）0..1
     this.mouthWorld = new THREE.Vector3();
     this.headWorld = new THREE.Vector3();
     this.headDir = new THREE.Vector3();
@@ -111,6 +115,17 @@ export class Dog {
     this.hop(0.9);
     audio.play('bark', pitch);
   }
+  /** ころん：ふせて 横に ころんと一回転（とちゅうで hold 秒 へそ天）。おわると立つ */
+  roll(hold = 0.5) {
+    if (this.rollT >= 0) return false;
+    this.rollT = 0;
+    this.rollHold = hold;
+    this.rollStep = 0;
+    this.poseTarget = 'stand';
+    this.excite = 1;
+    return true;
+  }
+  get rolling() { return this.rollT >= 0; }
 
   /** ものにぶつかった時の反応 */
   onBump(big, target) {
@@ -206,6 +221,22 @@ export class Dog {
     }
     this.yawnAmt = yawn;
 
+    // ころん：低くなって → 横に半回転（へそ天）→ もう半回転 → 立つ
+    let rollK = 0, rollA = 0, rollUp = 0;
+    if (this.rollT >= 0) {
+      this.rollT += dt;
+      const t = this.rollT, t1 = 0.22, t2 = t1 + 0.4, t3 = t2 + this.rollHold, t4 = t3 + 0.4, t5 = t4 + 0.28;
+      const e = (a, b) => smooth(clamp((t - a) / (b - a), 0, 1));
+      rollK = t < t4 ? e(0, t1) : 1 - e(t4, t5);
+      rollA = t < t3 ? e(t1, t2) * Math.PI : t < t4 ? Math.PI * (1 + e(t3, t4)) : 0;
+      rollUp = t >= t2 && t < t3 ? 1 : 0;
+      // ころん、の音（はじめと、背中が ついた時と、足で 立った時）
+      const step = t < t2 ? 1 : t < t4 ? 2 : 3;
+      if (step > this.rollStep) { this.rollStep = step; audio.play(step === 1 ? 'whoosh' : 'fluff'); }
+      this.excite = 1;
+      if (t >= t5) this.rollT = -1;
+    }
+
     // 小ジャンプ
     if (this.hopV !== 0 || this.hopY > 0) {
       this.hopV -= 14 * dt;
@@ -228,6 +259,7 @@ export class Dog {
     let y = lerp(d.bodyY, d.sitY, sit) + Math.abs(Math.sin(g)) * 0.008 * amp + breathe
       - lie * (d.bodyY - d.lieY) - bow * d.ry * 0.22 + this.hopY;
     y = y * (1 - belly) + (d.ry * 1.02 + breathe) * belly;
+    if (rollK > 0) y = lerp(y, d.ry * 1.02 + breathe, rollK);
     body.position.y = y;
     body.position.z = -sit * d.rz * 0.12;
     const gallop = dash ? Math.sin(g) * 0.14 : 0;
@@ -236,6 +268,21 @@ export class Dog {
     body.rotation.y = bow * Math.sin(this.t * 13) * 0.14;
     body.rotation.z = Math.sin(g) * 0.05 * amp + Math.sin(this.t * 34) * 0.05 * this.shake
       + belly * (Math.PI * 0.9 + Math.sin(this.t * 1.8) * 0.1);
+    if (rollK > 0) {
+      body.rotation.x *= 1 - rollK;
+      body.rotation.z = lerp(body.rotation.z, 0, rollK) + rollA + rollUp * Math.sin(this.t * 4.5) * 0.12;
+    }
+    // おしりふりふり：歩くと、胸を軸に おしりが左右にゆれる。うれしい時は 止まっていても
+    let hipYaw = 0;
+    if (this.wiggle > 0) {
+      const walk = clamp(sp / 1.0, 0, 1) * (1 - 0.5 * clamp((sp - 3) / 2, 0, 1));
+      const happy = clamp((this.excite - 0.7) / 0.3, 0, 1) * (1 - clamp(sp, 0, 1));
+      const k = this.wiggle * (1 - clamp(sit + lie + bow + belly, 0, 1)) * (1 - dash) * (1 - rollK);
+      hipYaw = (Math.sin(g) * 0.17 * walk + Math.sin(this.t * 11) * 0.1 * happy) * k;
+      body.rotation.y += hipYaw;
+      body.position.x = -d.rz * 0.55 * Math.sin(hipYaw);
+      body.rotation.z += hipYaw * 0.3;
+    }
     const sq = this.squash;
     body.scale.set(1 + sq * 0.08, 1 - sq * 0.1, 1 + sq * 0.12);
 
@@ -269,8 +316,16 @@ export class Dog {
     }
     FL.rotation.z = -0.15 * this.shake - belly * 0.3;
     FR.rotation.z = 0.15 * this.shake + belly * 0.3;
+    // ころんの間は、足を たたむ（へそ天の時は ばたばた）
+    if (rollK > 0) {
+      const pad = rollUp * Math.sin(this.t * 9) * 0.3;
+      FL.rotation.x = lerp(FL.rotation.x, -1.25 + pad, rollK);
+      FR.rotation.x = lerp(FR.rotation.x, -1.25 - pad, rollK);
+      BL.rotation.x = lerp(BL.rotation.x, 1.1 - pad, rollK);
+      BR.rotation.x = lerp(BR.rotation.x, 1.1 + pad, rollK);
+    }
     // おすわり・ふせでは、前足の長さを地面に合わせる（浮かない・めりこまない）
-    const plant = clamp(sit + bow, 0, 1) * (1 - lie) * (1 - belly) * (1 - this.air);
+    const plant = clamp(sit + bow, 0, 1) * (1 - lie) * (1 - belly) * (1 - this.air) * (1 - rollK);
     for (const L of rig.legs) L.scale.y = 1;
     if (plant > 0.01) { fitLeg(rig, FL, plant); fitLeg(rig, FR, plant); }
 
@@ -295,7 +350,7 @@ export class Dog {
     const chewNod = Math.sin(this.t * 13) * 0.22 * this.chew;
     const sniffNod = this.sniff > 0 ? 0.45 + Math.sin(this.t * 22) * 0.06 : 0;
     const barkUp = this.barkT > 0 ? -0.25 * Math.sin((this.barkT / 0.28) * Math.PI) : 0;
-    head.rotation.y = this.lookYaw + shakeYaw;
+    head.rotation.y = this.lookYaw + shakeYaw - hipYaw;   // おしりを ふっても、顔は前
     head.rotation.x = this.lookPitch + chewNod + sniffNod + Math.sin(g) * 0.05 * amp + lie * 0.25 + sit * 0.3
       - (this.dashT > 0 ? 0.1 : 0) - yawn * 0.5 + barkUp + bow * 0.12 - this.reach * 0.4 + this.dig * 0.35;
     head.rotation.z = this.tilt + Math.sin(this.t * 30) * 0.2 * this.shake;

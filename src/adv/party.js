@@ -239,10 +239,11 @@ export class Party {
 // drive(dt, target, { sitting, idle, face, speed }) で、道の上の点へ
 // ------------------------------------------------------------
 
-/** 犬の友だち（コロンちゃん）。Dog をそのまま動かす */
+/** 犬の友だち（コロンちゃん）。Dog をそのまま動かす。trick: 'roll' なら、止まって ワンと言うと「ころん」 */
 export class DogFollower {
-  constructor(g, dog, { id, name, gap = 1.2, order = 2 } = {}) {
-    Object.assign(this, { g, dog, id, name, gap, order });
+  constructor(g, dog, { id, name, gap = 1.2, order = 2, trick = null } = {}) {
+    Object.assign(this, { g, dog, id, name, gap, order, trick });
+    this.trickT = -99;
     this.maxSpeed = 6.8;
     this.minGap = 0.9;
     this.radius = 0.42;
@@ -257,6 +258,8 @@ export class DogFollower {
     this.adapter = { resolveDog: (d) => d.pos.copy(this._w) };
   }
   place(p) { this.dog.place(p.x, p.z, this.dog.heading, p.y); }
+  /** ころんの間は、その場で待つ（道を進まない） */
+  get hold() { return this.dog.rolling; }
   drive(dt, target, o) {
     const d = this.dog;
     const w = approach(d.pos, target, o.speed || this.maxSpeed, dt, this._w);
@@ -282,8 +285,22 @@ export class DogFollower {
   }
   react(kind) {
     if (kind !== 'bark' || !this.party) return;
-    const d = this.dog, g = this.g;
-    // ワンと言うと、コロンちゃんも ワン
+    const d = this.dog, g = this.g, p = g.player;
+    // 止まって ワンと言うと、得意の「ころん」（続けては しない）
+    const near = Math.hypot(d.pos.x - p.pos.x, d.pos.z - p.pos.z) < 3.5;
+    if (this.trick === 'roll' && near && p.dog.speed < 0.3 && !d.rolling && g.t - this.trickT > 4) {
+      this.trickT = g.t;
+      g.run(function* () {
+        yield 0.3;
+        d.roll(0.8);
+        yield 0.55;
+        g.sayAt(d.pos.clone().add(_a.set(0, 0.5, 0)), 'ころん♪', 1.4);
+        yield 1.6;
+        g.hearts(d.pos.clone().add(_a.set(0, 0.45, 0)), 3);
+      }());
+      return;
+    }
+    // 歩いている時は、ワンと言うと コロンちゃんも ワン
     g.run(function* () { yield 0.32; d.bark(1.32); }());
   }
 }

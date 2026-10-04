@@ -759,6 +759,7 @@ function park(g) {
   // （できごとの id 'shiba' と なかまの id 'komugi' は、保存データのため そのまま）
   const koron = new Dog(scene);
   koron.setParams(typeParams('koron', 'コロン'));
+  koron.wiggle = 1;   // コーギーゆずりの、おしりふりふり
   koron.place(60.3, -66.6, Math.PI + 0.3);
   koron.setPose('sit');
   g.koron = koron;
@@ -768,10 +769,15 @@ function park(g) {
   const adapter = { resolveDog: (d) => { d.pos.y = 0; g.town.col.resolve(d.pos, d.radius, 0.5, 0.3); } };
   g.ev.pos('shiba', () => _a.copy(koron.pos).setY(0.95));
   // つかまえると、コロンちゃんは 駅まで いっしょに来てくれる（なかま）
-  const koronF = new DogFollower(g, koron, { id: 'komugi', name: 'コロンちゃん', gap: 1.2, order: 2 });
+  const koronF = new DogFollower(g, koron, { id: 'komugi', name: 'コロンちゃん', gap: 1.2, order: 2, trick: 'roll' });
   koronF.onJoin = () => g.ui.toast('コロンちゃんが なかまに なった！ 駅まで いっしょ', 'heart');
   function* startTag() {
     st = 'bow';
+    // あいさつは、名前のとおり 得意の「ころん」から
+    koron.roll(0.25);
+    yield 0.5;
+    g.sayAt(koron.pos.clone().add(V(0, 0.5, 0)), 'わふっ（ころん！）', 1.4);
+    yield 1.05;
     koron.setPose('bow');
     koron.bark(1.25);
     g.sayAt(koron.pos, 'わんっ！（おいかけっこ！）', 1.6);
@@ -803,9 +809,11 @@ function park(g) {
       // 隅に追いこまれて逃げられないときは、少したてば つかまえられる
       if (dd < 0.75 && (escaped || tagT > 3.5)) {
         st = 'caught';
-        koron.setPose('belly');
+        // つかまると、ころんと転がって へそ天で「まいった」
+        koron.roll(1.6);
         koron.setExpr('happy');
         koron.bark(1.3);
+        g.sayAt(koron.pos.clone().add(V(0, 0.5, 0)), 'きゃうん♪（ころん…まいった〜）', 2.0);
         g.hearts(koron.pos.clone().add(V(0, 0.5, 0)), 6);
         g.ui.objective('においをたどって 駅へ');
         g.ev.complete('shiba', 'おいかけっこで、コロンちゃんを つかまえた');
